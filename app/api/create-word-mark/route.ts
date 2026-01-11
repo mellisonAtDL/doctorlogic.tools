@@ -22,20 +22,96 @@ interface WordMarkConfig {
   taglineColor: string;
 }
 
-// Get Google Fonts CSS import with italic support
-function getGoogleFontImport(
+// Cache for embedded font data to avoid repeated fetches
+const fontCache = new Map<string, string>();
+
+// Fetch Google Font and return base64-embedded @font-face CSS
+async function getEmbeddedFontCss(
   fontName: string,
   fontWeight: string,
   fontStyle: string
-): string {
+): Promise<string> {
+  const cacheKey = `${fontName}-${fontWeight}-${fontStyle}`;
+
+  // Check cache first
+  if (fontCache.has(cacheKey)) {
+    return fontCache.get(cacheKey)!;
+  }
+
   const encodedFont = fontName.replace(/ /g, "+");
 
-  // Also include regular weight for tagline
-  // Note: Use &amp; instead of & for XML/SVG compatibility
+  // Build the Google Fonts CSS URL
+  let cssUrl: string;
   if (fontStyle === "italic") {
-    return `@import url('https://fonts.googleapis.com/css2?family=${encodedFont}:ital,wght@0,400;1,${fontWeight}&amp;display=swap');`;
+    cssUrl = `https://fonts.googleapis.com/css2?family=${encodedFont}:ital,wght@0,400;1,${fontWeight}&display=swap`;
+  } else {
+    cssUrl = `https://fonts.googleapis.com/css2?family=${encodedFont}:wght@400;${fontWeight}&display=swap`;
   }
-  return `@import url('https://fonts.googleapis.com/css2?family=${encodedFont}:wght@400;${fontWeight}&amp;display=swap');`;
+
+  try {
+    // Fetch the CSS with a user-agent that returns woff2 format
+    const cssResponse = await fetch(cssUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    });
+
+    if (!cssResponse.ok) {
+      throw new Error(`Failed to fetch font CSS: ${cssResponse.status}`);
+    }
+
+    const cssText = await cssResponse.text();
+
+    // Parse out all font URLs from the CSS
+    const fontFaceRegex = /@font-face\s*\{([^}]+)\}/g;
+    const urlRegex = /src:\s*url\(([^)]+)\)\s*format\(['"]?woff2['"]?\)/;
+    const fontWeightRegex = /font-weight:\s*(\d+)/;
+    const fontStyleRegex = /font-style:\s*(\w+)/;
+
+    let embeddedCss = "";
+    let match;
+
+    while ((match = fontFaceRegex.exec(cssText)) !== null) {
+      const fontFaceBlock = match[1];
+      const urlMatch = fontFaceBlock.match(urlRegex);
+      const weightMatch = fontFaceBlock.match(fontWeightRegex);
+      const styleMatch = fontFaceBlock.match(fontStyleRegex);
+
+      if (urlMatch) {
+        const fontUrl = urlMatch[1];
+        const weight = weightMatch ? weightMatch[1] : "400";
+        const style = styleMatch ? styleMatch[1] : "normal";
+
+        // Fetch the actual font file
+        const fontResponse = await fetch(fontUrl);
+        if (fontResponse.ok) {
+          const fontBuffer = await fontResponse.arrayBuffer();
+          const base64Font = Buffer.from(fontBuffer).toString("base64");
+
+          // Create embedded @font-face
+          embeddedCss += `
+            @font-face {
+              font-family: '${fontName}';
+              font-style: ${style};
+              font-weight: ${weight};
+              src: url(data:font/woff2;base64,${base64Font}) format('woff2');
+            }
+          `;
+        }
+      }
+    }
+
+    // Cache the result
+    if (embeddedCss) {
+      fontCache.set(cacheKey, embeddedCss);
+    }
+
+    return embeddedCss;
+  } catch (error) {
+    console.error("Error fetching font:", error);
+    // Return empty string on error - will fall back to system fonts
+    return "";
+  }
 }
 
 // Escape XML special characters
@@ -94,16 +170,11 @@ function calculateTextDimensions(
 }
 
 // Create SVG for the word mark
-function createWordMarkSvg(config: WordMarkConfig): {
+function createWordMarkSvg(config: WordMarkConfig, embeddedFontCss: string): {
   svg: string;
   width: number;
   height: number;
 } {
-  const fontImport = getGoogleFontImport(
-    config.fontFamily,
-    config.fontWeight,
-    config.fontStyle
-  );
 
   // Transform the text
   const transformedText = transformText(config.text, config.textTransform);
@@ -156,7 +227,6 @@ function createWordMarkSvg(config: WordMarkConfig): {
 
   // Create text elements
   let textElements = "";
-  const totalMainTextHeight = lines.length * lineHeightPx;
   const mainTextStartY = config.padding + config.fontSize * 0.85;
 
   if (isStacked) {
@@ -215,7 +285,7 @@ function createWordMarkSvg(config: WordMarkConfig): {
     <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <style type="text/css">
-          ${fontImport}
+          ${embeddedFontCss}
         </style>
       </defs>
       ${textElements}
@@ -236,8 +306,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create SVG
-    const { svg, width, height } = createWordMarkSvg(config);
+    // Fetch and embed the font
+    const embeddedFontCss = await getEmbeddedFontCss(
+      config.fontFamily,
+      config.fontWeight,
+      config.fontStyle
+    );
+
+    // Create SVG with embedded font
+    const { svg, width, height } = createWordMarkSvg(config, embeddedFontCss);
 
     // Convert SVG to PNG using Sharp
     // Use a higher density for better quality (2x for retina)
