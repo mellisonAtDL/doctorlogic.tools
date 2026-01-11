@@ -1,5 +1,7 @@
-import sharp from "sharp";
+import { Resvg } from "@resvg/resvg-js";
 import { NextRequest, NextResponse } from "next/server";
+import * as fs from "fs";
+import * as path from "path";
 
 interface WordMarkConfig {
   text: string;
@@ -22,96 +24,74 @@ interface WordMarkConfig {
   taglineColor: string;
 }
 
-// Cache for embedded font data to avoid repeated fetches
-const fontCache = new Map<string, string>();
+// Map font families to local font files
+const fontFileMap: Record<string, Record<string, string>> = {
+  Inter: {
+    "400": "Inter-Regular.ttf",
+    "500": "Inter-Medium.ttf",
+    "600": "Inter-SemiBold.ttf",
+    "700": "Inter-Bold.ttf",
+  },
+  Montserrat: {
+    "400": "Montserrat-Regular.ttf",
+    "500": "Montserrat-Medium.ttf",
+    "600": "Montserrat-SemiBold.ttf",
+    "700": "Montserrat-Bold.ttf",
+  },
+  Poppins: {
+    "400": "Poppins-Regular.ttf",
+    "500": "Poppins-Medium.ttf",
+    "600": "Poppins-SemiBold.ttf",
+    "700": "Poppins-Bold.ttf",
+  },
+  Roboto: {
+    "400": "Roboto-Regular.ttf",
+    "500": "Roboto-Medium.ttf",
+    "700": "Roboto-Bold.ttf",
+  },
+  Lato: {
+    "400": "Lato-Regular.ttf",
+    "700": "Lato-Bold.ttf",
+  },
+  "Open Sans": {
+    "400": "OpenSans-Regular.ttf",
+    "600": "OpenSans-SemiBold.ttf",
+    "700": "OpenSans-Bold.ttf",
+  },
+};
 
-// Fetch Google Font and return base64-embedded @font-face CSS
-async function getEmbeddedFontCss(
-  fontName: string,
-  fontWeight: string,
-  fontStyle: string
-): Promise<string> {
-  const cacheKey = `${fontName}-${fontWeight}-${fontStyle}`;
+// Get the fonts directory path
+function getFontsDir(): string {
+  // In production, fonts are in public/fonts
+  // During development, use process.cwd()
+  return path.join(process.cwd(), "public", "fonts");
+}
 
-  // Check cache first
-  if (fontCache.has(cacheKey)) {
-    return fontCache.get(cacheKey)!;
+// Get font file path
+function getFontPath(fontFamily: string, fontWeight: string): string | null {
+  const familyMap = fontFileMap[fontFamily];
+  if (!familyMap) {
+    // Try Inter as fallback
+    return getFontPath("Inter", fontWeight);
   }
 
-  const encodedFont = fontName.replace(/ /g, "+");
-
-  // Build the Google Fonts CSS URL
-  let cssUrl: string;
-  if (fontStyle === "italic") {
-    cssUrl = `https://fonts.googleapis.com/css2?family=${encodedFont}:ital,wght@0,400;1,${fontWeight}&display=swap`;
-  } else {
-    cssUrl = `https://fonts.googleapis.com/css2?family=${encodedFont}:wght@400;${fontWeight}&display=swap`;
+  // Find the closest available weight
+  let fileName = familyMap[fontWeight];
+  if (!fileName) {
+    // Try to find closest weight
+    const weights = Object.keys(familyMap).map(Number).sort((a, b) => a - b);
+    const targetWeight = parseInt(fontWeight);
+    const closestWeight = weights.reduce((prev, curr) =>
+      Math.abs(curr - targetWeight) < Math.abs(prev - targetWeight) ? curr : prev
+    );
+    fileName = familyMap[closestWeight.toString()];
   }
 
-  try {
-    // Fetch the CSS with a user-agent that returns woff2 format
-    const cssResponse = await fetch(cssUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
-    });
-
-    if (!cssResponse.ok) {
-      throw new Error(`Failed to fetch font CSS: ${cssResponse.status}`);
-    }
-
-    const cssText = await cssResponse.text();
-
-    // Parse out all font URLs from the CSS
-    const fontFaceRegex = /@font-face\s*\{([^}]+)\}/g;
-    const urlRegex = /src:\s*url\(([^)]+)\)\s*format\(['"]?woff2['"]?\)/;
-    const fontWeightRegex = /font-weight:\s*(\d+)/;
-    const fontStyleRegex = /font-style:\s*(\w+)/;
-
-    let embeddedCss = "";
-    let match;
-
-    while ((match = fontFaceRegex.exec(cssText)) !== null) {
-      const fontFaceBlock = match[1];
-      const urlMatch = fontFaceBlock.match(urlRegex);
-      const weightMatch = fontFaceBlock.match(fontWeightRegex);
-      const styleMatch = fontFaceBlock.match(fontStyleRegex);
-
-      if (urlMatch) {
-        const fontUrl = urlMatch[1];
-        const weight = weightMatch ? weightMatch[1] : "400";
-        const style = styleMatch ? styleMatch[1] : "normal";
-
-        // Fetch the actual font file
-        const fontResponse = await fetch(fontUrl);
-        if (fontResponse.ok) {
-          const fontBuffer = await fontResponse.arrayBuffer();
-          const base64Font = Buffer.from(fontBuffer).toString("base64");
-
-          // Create embedded @font-face
-          embeddedCss += `
-            @font-face {
-              font-family: '${fontName}';
-              font-style: ${style};
-              font-weight: ${weight};
-              src: url(data:font/woff2;base64,${base64Font}) format('woff2');
-            }
-          `;
-        }
-      }
-    }
-
-    // Cache the result
-    if (embeddedCss) {
-      fontCache.set(cacheKey, embeddedCss);
-    }
-
-    return embeddedCss;
-  } catch (error) {
-    console.error("Error fetching font:", error);
-    // Return empty string on error - will fall back to system fonts
-    return "";
+  if (!fileName) {
+    return null;
   }
+
+  return path.join(getFontsDir(), fileName);
 }
 
 // Escape XML special characters
@@ -169,15 +149,54 @@ function calculateTextDimensions(
   return { width: Math.ceil(width), height: Math.ceil(lineHeightPx) };
 }
 
+// Get the effective font family (map to available fonts or use fallback)
+function getEffectiveFontFamily(fontFamily: string): string {
+  if (fontFileMap[fontFamily]) {
+    return fontFamily;
+  }
+  // Map similar fonts to available ones
+  const fontMapping: Record<string, string> = {
+    "Work Sans": "Inter",
+    "DM Sans": "Inter",
+    Manrope: "Inter",
+    "Plus Jakarta Sans": "Poppins",
+    Nunito: "Lato",
+    Raleway: "Montserrat",
+    Oswald: "Montserrat",
+    "Bebas Neue": "Montserrat",
+    Anton: "Montserrat",
+    "Archivo Black": "Roboto",
+    Righteous: "Poppins",
+    "Playfair Display": "Lato",
+    Merriweather: "Lato",
+    Lora: "Lato",
+    "Cormorant Garamond": "Lato",
+    "Libre Baskerville": "Lato",
+    "DM Serif Display": "Lato",
+    "Crimson Text": "Lato",
+    "EB Garamond": "Lato",
+    "Roboto Slab": "Roboto",
+    Arvo: "Roboto",
+    Bitter: "Roboto",
+    "Great Vibes": "Lato",
+    Pacifico: "Lato",
+    "Dancing Script": "Lato",
+    Satisfy: "Lato",
+  };
+  return fontMapping[fontFamily] || "Inter";
+}
+
 // Create SVG for the word mark
-function createWordMarkSvg(config: WordMarkConfig, embeddedFontCss: string): {
+function createWordMarkSvg(config: WordMarkConfig): {
   svg: string;
   width: number;
   height: number;
 } {
-
   // Transform the text
   const transformedText = transformText(config.text, config.textTransform);
+
+  // Get effective font family (mapped to available fonts)
+  const effectiveFontFamily = getEffectiveFontFamily(config.fontFamily);
 
   // Calculate main text dimensions
   const textDimensions = calculateTextDimensions(
@@ -238,7 +257,7 @@ function createWordMarkSvg(config: WordMarkConfig, embeddedFontCss: string): {
           text-anchor="middle"
           dominant-baseline="auto"
           fill="${config.color}"
-          font-family="'${config.fontFamily}', sans-serif"
+          font-family="${effectiveFontFamily}"
           font-size="${config.fontSize}px"
           font-weight="${config.fontWeight}"
           font-style="${config.fontStyle}"
@@ -254,7 +273,7 @@ function createWordMarkSvg(config: WordMarkConfig, embeddedFontCss: string): {
         text-anchor="middle"
         dominant-baseline="central"
         fill="${config.color}"
-        font-family="'${config.fontFamily}', sans-serif"
+        font-family="${effectiveFontFamily}"
         font-size="${config.fontSize}px"
         font-weight="${config.fontWeight}"
         font-style="${config.fontStyle}"
@@ -273,24 +292,14 @@ function createWordMarkSvg(config: WordMarkConfig, embeddedFontCss: string): {
         text-anchor="middle"
         dominant-baseline="auto"
         fill="${config.taglineColor}"
-        font-family="'${config.fontFamily}', sans-serif"
+        font-family="${effectiveFontFamily}"
         font-size="${config.taglineFontSize}px"
         font-weight="400"
         letter-spacing="${config.taglineLetterSpacing}px"
-        text-transform="uppercase"
       >${escapeXml(config.tagline.toUpperCase())}</text>`;
   }
 
-  const svg = `
-    <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <style type="text/css">
-          ${embeddedFontCss}
-        </style>
-      </defs>
-      ${textElements}
-    </svg>
-  `;
+  const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${textElements}</svg>`;
 
   return { svg, width, height };
 }
@@ -306,32 +315,58 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch and embed the font
-    const embeddedFontCss = await getEmbeddedFontCss(
-      config.fontFamily,
-      config.fontWeight,
-      config.fontStyle
-    );
+    // Get effective font family
+    const effectiveFontFamily = getEffectiveFontFamily(config.fontFamily);
 
-    // Create SVG with embedded font
-    const { svg, width, height } = createWordMarkSvg(config, embeddedFontCss);
+    // Get font file paths for resvg
+    const mainFontPath = getFontPath(effectiveFontFamily, config.fontWeight);
+    const regularFontPath = getFontPath(effectiveFontFamily, "400");
 
-    // Convert SVG to PNG using Sharp
-    // Use a higher density for better quality (2x for retina)
+    if (!mainFontPath) {
+      return NextResponse.json(
+        { error: `Font ${config.fontFamily} not available` },
+        { status: 400 }
+      );
+    }
+
+    // Validate font files exist
+    if (!fs.existsSync(mainFontPath)) {
+      return NextResponse.json(
+        { error: `Font file not found: ${mainFontPath}` },
+        { status: 500 }
+      );
+    }
+
+    // Create SVG
+    const { svg, width, height } = createWordMarkSvg(config);
+
+    // Use resvg to render SVG to PNG with fonts
     const scaleFactor = 2;
-    const pngBuffer = await sharp(Buffer.from(svg))
-      .resize(width * scaleFactor, height * scaleFactor)
-      .png()
-      .toBuffer();
+    const fontFiles: string[] = [mainFontPath];
+    if (regularFontPath && regularFontPath !== mainFontPath && fs.existsSync(regularFontPath)) {
+      fontFiles.push(regularFontPath);
+    }
 
-    // Get actual dimensions of the final image
-    const metadata = await sharp(pngBuffer).metadata();
+    const resvg = new Resvg(svg, {
+      fitTo: {
+        mode: "width",
+        value: width * scaleFactor,
+      },
+      font: {
+        fontFiles,
+        loadSystemFonts: false,
+        defaultFontFamily: effectiveFontFamily,
+      },
+    });
+
+    const pngData = resvg.render();
+    const pngBuffer = pngData.asPng();
 
     return NextResponse.json({
       success: true,
       base64: pngBuffer.toString("base64"),
-      width: metadata.width,
-      height: metadata.height,
+      width: width * scaleFactor,
+      height: height * scaleFactor,
     });
   } catch (error) {
     console.error("Word mark creation error:", error);
