@@ -71,6 +71,36 @@ export default function Home() {
               Customize fonts, colors, and styles.
             </p>
           </Link>
+
+          <Link
+            href="/favicon-generator"
+            className="block p-6 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-blue-300 transition-all"
+          >
+            <div className="flex items-center gap-4 mb-3">
+              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                <svg
+                  className="w-6 h-6 text-green-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
+                  />
+                </svg>
+              </div>
+              <h2 className="text-xl font-semibold text-gray-900">
+                Favicon Generator
+              </h2>
+            </div>
+            <p className="text-gray-600">
+              Generate favicons for all platforms and devices. Create ICO, PNG,
+              and Apple Touch icons from a single image.
+            </p>
+          </Link>
         </div>
       </div>
     </main>
