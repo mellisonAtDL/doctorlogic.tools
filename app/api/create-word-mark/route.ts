@@ -3,37 +3,40 @@ import { NextRequest, NextResponse } from "next/server";
 
 interface WordMarkConfig {
   text: string;
+  tagline: string;
   fontFamily: string;
   fontSize: number;
   fontWeight: string;
+  fontStyle: "normal" | "italic";
+  textTransform: "none" | "uppercase" | "lowercase" | "capitalize";
   color: string;
-  backgroundColor: string;
   letterSpacing: number;
+  lineHeight: number;
   padding: number;
   layout: "single" | "stacked";
+  strokeEnabled: boolean;
+  strokeColor: string;
+  strokeWidth: number;
+  taglineFontSize: number;
+  taglineLetterSpacing: number;
+  taglineColor: string;
 }
 
-// Map font family to Google Fonts URL-friendly name
-function getFontFileName(fontFamily: string): string {
-  const fontMap: Record<string, string> = {
-    "Inter, sans-serif": "Inter",
-    "Playfair Display, serif": "Playfair Display",
-    "Montserrat, sans-serif": "Montserrat",
-    "Roboto, sans-serif": "Roboto",
-    "Open Sans, sans-serif": "Open Sans",
-    "Lato, sans-serif": "Lato",
-    "Oswald, sans-serif": "Oswald",
-    "Raleway, sans-serif": "Raleway",
-    "Poppins, sans-serif": "Poppins",
-    "Merriweather, serif": "Merriweather",
-  };
-  return fontMap[fontFamily] || "Inter";
-}
-
-// Get Google Fonts CSS import
-function getGoogleFontImport(fontName: string, fontWeight: string): string {
+// Get Google Fonts CSS import with italic support
+function getGoogleFontImport(
+  fontName: string,
+  fontWeight: string,
+  fontStyle: string
+): string {
   const encodedFont = fontName.replace(/ /g, "+");
-  return `@import url('https://fonts.googleapis.com/css2?family=${encodedFont}:wght@${fontWeight}&display=swap');`;
+  const italicSuffix = fontStyle === "italic" ? "italic" : "";
+  const weightSpec = fontStyle === "italic" ? `ital,wght@1,${fontWeight}` : `wght@${fontWeight}`;
+
+  // Also include regular weight for tagline
+  if (fontStyle === "italic") {
+    return `@import url('https://fonts.googleapis.com/css2?family=${encodedFont}:ital,wght@0,400;1,${fontWeight}&display=swap');`;
+  }
+  return `@import url('https://fonts.googleapis.com/css2?family=${encodedFont}:wght@400;${fontWeight}&display=swap');`;
 }
 
 // Escape XML special characters
@@ -46,31 +49,49 @@ function escapeXml(text: string): string {
     .replace(/'/g, "&apos;");
 }
 
+// Transform text based on textTransform setting
+function transformText(text: string, transform: string): string {
+  switch (transform) {
+    case "uppercase":
+      return text.toUpperCase();
+    case "lowercase":
+      return text.toLowerCase();
+    case "capitalize":
+      return text
+        .split(" ")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(" ");
+    default:
+      return text;
+  }
+}
+
 // Calculate text dimensions (approximate)
 function calculateTextDimensions(
   text: string,
   fontSize: number,
   fontWeight: string,
   letterSpacing: number,
+  lineHeight: number,
   layout: "single" | "stacked"
 ): { width: number; height: number } {
   // Approximate character width based on font size and weight
   const weightMultiplier =
     parseInt(fontWeight) >= 600 ? 0.65 : parseInt(fontWeight) >= 500 ? 0.6 : 0.55;
   const charWidth = fontSize * weightMultiplier;
-  const lineHeight = fontSize * 1.2;
+  const lineHeightPx = fontSize * lineHeight;
 
   if (layout === "stacked" && text.includes(" ")) {
     const lines = text.split(" ");
     const maxLineLength = Math.max(...lines.map((line) => line.length));
     const width =
       maxLineLength * charWidth + (maxLineLength - 1) * letterSpacing;
-    const height = lines.length * lineHeight;
+    const height = lines.length * lineHeightPx;
     return { width: Math.ceil(width), height: Math.ceil(height) };
   }
 
   const width = text.length * charWidth + (text.length - 1) * letterSpacing;
-  return { width: Math.ceil(width), height: Math.ceil(lineHeight) };
+  return { width: Math.ceil(width), height: Math.ceil(lineHeightPx) };
 }
 
 // Create SVG for the word mark
@@ -79,62 +100,116 @@ function createWordMarkSvg(config: WordMarkConfig): {
   width: number;
   height: number;
 } {
-  const fontName = getFontFileName(config.fontFamily);
-  const fontImport = getGoogleFontImport(fontName, config.fontWeight);
-  const escapedText = escapeXml(config.text);
+  const fontImport = getGoogleFontImport(
+    config.fontFamily,
+    config.fontWeight,
+    config.fontStyle
+  );
 
-  // Calculate dimensions
+  // Transform the text
+  const transformedText = transformText(config.text, config.textTransform);
+
+  // Calculate main text dimensions
   const textDimensions = calculateTextDimensions(
-    config.text,
+    transformedText,
     config.fontSize,
     config.fontWeight,
     config.letterSpacing,
+    config.lineHeight,
     config.layout
   );
 
-  const width = textDimensions.width + config.padding * 2;
-  const height = textDimensions.height + config.padding * 2;
+  // Calculate tagline dimensions if present
+  let taglineHeight = 0;
+  let taglineWidth = 0;
+  const taglineSpacing = config.tagline ? config.fontSize * 0.3 : 0;
+
+  if (config.tagline) {
+    const taglineDimensions = calculateTextDimensions(
+      config.tagline.toUpperCase(),
+      config.taglineFontSize,
+      "400",
+      config.taglineLetterSpacing,
+      1.2,
+      "single"
+    );
+    taglineHeight = taglineDimensions.height + taglineSpacing;
+    taglineWidth = taglineDimensions.width;
+  }
+
+  const contentWidth = Math.max(textDimensions.width, taglineWidth);
+  const contentHeight = textDimensions.height + taglineHeight;
+
+  const width = contentWidth + config.padding * 2;
+  const height = contentHeight + config.padding * 2;
 
   // For stacked layout, split text into lines
-  const isStacked = config.layout === "stacked" && config.text.includes(" ");
-  const lines = isStacked ? config.text.split(" ") : [config.text];
+  const isStacked = config.layout === "stacked" && transformedText.includes(" ");
+  const lines = isStacked ? transformedText.split(" ") : [transformedText];
 
   // Calculate line height and vertical positioning
-  const lineHeight = config.fontSize * 1.2;
+  const lineHeightPx = config.fontSize * config.lineHeight;
+
+  // Build stroke attributes for text
+  const strokeAttrs = config.strokeEnabled
+    ? `stroke="${config.strokeColor}" stroke-width="${config.strokeWidth}" paint-order="stroke fill"`
+    : "";
 
   // Create text elements
   let textElements = "";
-  if (isStacked) {
-    const totalTextHeight = lines.length * lineHeight;
-    const startY = (height - totalTextHeight) / 2 + config.fontSize * 0.85;
+  const totalMainTextHeight = lines.length * lineHeightPx;
+  const mainTextStartY = config.padding + config.fontSize * 0.85;
 
+  if (isStacked) {
     lines.forEach((line, index) => {
       textElements += `
         <text
           x="50%"
-          y="${startY + index * lineHeight}"
+          y="${mainTextStartY + index * lineHeightPx}"
           text-anchor="middle"
           dominant-baseline="auto"
           fill="${config.color}"
-          font-family="'${fontName}', ${config.fontFamily.split(",")[1]?.trim() || "sans-serif"}"
+          font-family="'${config.fontFamily}', sans-serif"
           font-size="${config.fontSize}px"
           font-weight="${config.fontWeight}"
+          font-style="${config.fontStyle}"
           letter-spacing="${config.letterSpacing}px"
+          ${strokeAttrs}
         >${escapeXml(line)}</text>`;
     });
   } else {
     textElements = `
       <text
         x="50%"
-        y="50%"
+        y="${config.padding + textDimensions.height / 2}"
         text-anchor="middle"
         dominant-baseline="central"
         fill="${config.color}"
-        font-family="'${fontName}', ${config.fontFamily.split(",")[1]?.trim() || "sans-serif"}"
+        font-family="'${config.fontFamily}', sans-serif"
         font-size="${config.fontSize}px"
         font-weight="${config.fontWeight}"
+        font-style="${config.fontStyle}"
         letter-spacing="${config.letterSpacing}px"
-      >${escapedText}</text>`;
+        ${strokeAttrs}
+      >${escapeXml(transformedText)}</text>`;
+  }
+
+  // Add tagline if present
+  if (config.tagline) {
+    const taglineY = config.padding + textDimensions.height + taglineSpacing + config.taglineFontSize * 0.85;
+    textElements += `
+      <text
+        x="50%"
+        y="${taglineY}"
+        text-anchor="middle"
+        dominant-baseline="auto"
+        fill="${config.taglineColor}"
+        font-family="'${config.fontFamily}', sans-serif"
+        font-size="${config.taglineFontSize}px"
+        font-weight="400"
+        letter-spacing="${config.taglineLetterSpacing}px"
+        text-transform="uppercase"
+      >${escapeXml(config.tagline.toUpperCase())}</text>`;
   }
 
   const svg = `
@@ -166,9 +241,10 @@ export async function POST(request: NextRequest) {
     const { svg, width, height } = createWordMarkSvg(config);
 
     // Convert SVG to PNG using Sharp
-    // Use a higher density for better quality
+    // Use a higher density for better quality (2x for retina)
+    const scaleFactor = 2;
     const pngBuffer = await sharp(Buffer.from(svg))
-      .resize(width * 2, height * 2) // 2x for retina quality
+      .resize(width * scaleFactor, height * scaleFactor)
       .png()
       .toBuffer();
 
