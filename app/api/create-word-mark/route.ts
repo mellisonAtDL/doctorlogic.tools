@@ -1,4 +1,4 @@
-import { Resvg } from "@resvg/resvg-js";
+import { Resvg, initWasm } from "@resvg/resvg-wasm";
 import { NextRequest, NextResponse } from "next/server";
 import * as fs from "fs";
 import * as path from "path";
@@ -60,25 +60,60 @@ const fontFileMap: Record<string, Record<string, string>> = {
   },
 };
 
+// WASM initialization state
+let wasmInitialized = false;
+
+// Initialize WASM module
+async function ensureWasmInitialized(): Promise<void> {
+  if (wasmInitialized) return;
+
+  try {
+    // Load WASM from node_modules
+    const wasmPath = path.join(
+      process.cwd(),
+      "node_modules",
+      "@resvg",
+      "resvg-wasm",
+      "index_bg.wasm"
+    );
+    const wasmBuffer = fs.readFileSync(wasmPath);
+    await initWasm(wasmBuffer);
+    wasmInitialized = true;
+  } catch (error) {
+    // WASM might already be initialized
+    if (error instanceof Error && error.message.includes("Already initialized")) {
+      wasmInitialized = true;
+    } else {
+      throw error;
+    }
+  }
+}
+
+// Cache for loaded font buffers
+const fontBufferCache = new Map<string, Uint8Array>();
+
 // Get the fonts directory path
 function getFontsDir(): string {
-  // In production, fonts are in public/fonts
-  // During development, use process.cwd()
   return path.join(process.cwd(), "public", "fonts");
 }
 
-// Get font file path
-function getFontPath(fontFamily: string, fontWeight: string): string | null {
+// Load font as Uint8Array
+function loadFontBuffer(fontFamily: string, fontWeight: string): Uint8Array | null {
+  const cacheKey = `${fontFamily}-${fontWeight}`;
+
+  if (fontBufferCache.has(cacheKey)) {
+    return fontBufferCache.get(cacheKey)!;
+  }
+
   const familyMap = fontFileMap[fontFamily];
   if (!familyMap) {
     // Try Inter as fallback
-    return getFontPath("Inter", fontWeight);
+    return loadFontBuffer("Inter", fontWeight);
   }
 
   // Find the closest available weight
   let fileName = familyMap[fontWeight];
   if (!fileName) {
-    // Try to find closest weight
     const weights = Object.keys(familyMap).map(Number).sort((a, b) => a - b);
     const targetWeight = parseInt(fontWeight);
     const closestWeight = weights.reduce((prev, curr) =>
@@ -91,7 +126,16 @@ function getFontPath(fontFamily: string, fontWeight: string): string | null {
     return null;
   }
 
-  return path.join(getFontsDir(), fileName);
+  try {
+    const fontPath = path.join(getFontsDir(), fileName);
+    const buffer = fs.readFileSync(fontPath);
+    const uint8Array = new Uint8Array(buffer);
+    fontBufferCache.set(cacheKey, uint8Array);
+    return uint8Array;
+  } catch (error) {
+    console.error(`Failed to load font ${fontFamily} ${fontWeight}:`, error);
+    return null;
+  }
 }
 
 // Escape XML special characters
@@ -130,7 +174,6 @@ function calculateTextDimensions(
   lineHeight: number,
   layout: "single" | "stacked"
 ): { width: number; height: number } {
-  // Approximate character width based on font size and weight
   const weightMultiplier =
     parseInt(fontWeight) >= 600 ? 0.65 : parseInt(fontWeight) >= 500 ? 0.6 : 0.55;
   const charWidth = fontSize * weightMultiplier;
@@ -154,7 +197,6 @@ function getEffectiveFontFamily(fontFamily: string): string {
   if (fontFileMap[fontFamily]) {
     return fontFamily;
   }
-  // Map similar fonts to available ones
   const fontMapping: Record<string, string> = {
     "Work Sans": "Inter",
     "DM Sans": "Inter",
@@ -192,13 +234,9 @@ function createWordMarkSvg(config: WordMarkConfig): {
   width: number;
   height: number;
 } {
-  // Transform the text
   const transformedText = transformText(config.text, config.textTransform);
-
-  // Get effective font family (mapped to available fonts)
   const effectiveFontFamily = getEffectiveFontFamily(config.fontFamily);
 
-  // Calculate main text dimensions
   const textDimensions = calculateTextDimensions(
     transformedText,
     config.fontSize,
@@ -208,7 +246,6 @@ function createWordMarkSvg(config: WordMarkConfig): {
     config.layout
   );
 
-  // Calculate tagline dimensions if present
   let taglineHeight = 0;
   let taglineWidth = 0;
   const taglineSpacing = config.tagline ? config.fontSize * 0.3 : 0;
@@ -232,19 +269,14 @@ function createWordMarkSvg(config: WordMarkConfig): {
   const width = contentWidth + config.padding * 2;
   const height = contentHeight + config.padding * 2;
 
-  // For stacked layout, split text into lines
   const isStacked = config.layout === "stacked" && transformedText.includes(" ");
   const lines = isStacked ? transformedText.split(" ") : [transformedText];
-
-  // Calculate line height and vertical positioning
   const lineHeightPx = config.fontSize * config.lineHeight;
 
-  // Build stroke attributes for text
   const strokeAttrs = config.strokeEnabled
     ? `stroke="${config.strokeColor}" stroke-width="${config.strokeWidth}" paint-order="stroke fill"`
     : "";
 
-  // Create text elements
   let textElements = "";
   const mainTextStartY = config.padding + config.fontSize * 0.85;
 
@@ -282,7 +314,6 @@ function createWordMarkSvg(config: WordMarkConfig): {
       >${escapeXml(transformedText)}</text>`;
   }
 
-  // Add tagline if present
   if (config.tagline) {
     const taglineY = config.padding + textDimensions.height + taglineSpacing + config.taglineFontSize * 0.85;
     textElements += `
@@ -315,45 +346,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Initialize WASM
+    await ensureWasmInitialized();
+
     // Get effective font family
     const effectiveFontFamily = getEffectiveFontFamily(config.fontFamily);
 
-    // Get font file paths for resvg
-    const mainFontPath = getFontPath(effectiveFontFamily, config.fontWeight);
-    const regularFontPath = getFontPath(effectiveFontFamily, "400");
+    // Load font buffers
+    const mainFontBuffer = loadFontBuffer(effectiveFontFamily, config.fontWeight);
+    const regularFontBuffer = loadFontBuffer(effectiveFontFamily, "400");
 
-    if (!mainFontPath) {
+    if (!mainFontBuffer) {
       return NextResponse.json(
         { error: `Font ${config.fontFamily} not available` },
         { status: 400 }
       );
     }
 
-    // Validate font files exist
-    if (!fs.existsSync(mainFontPath)) {
-      return NextResponse.json(
-        { error: `Font file not found: ${mainFontPath}` },
-        { status: 500 }
-      );
-    }
-
     // Create SVG
     const { svg, width, height } = createWordMarkSvg(config);
 
-    // Use resvg to render SVG to PNG with fonts
-    const scaleFactor = 2;
-    const fontFiles: string[] = [mainFontPath];
-    if (regularFontPath && regularFontPath !== mainFontPath && fs.existsSync(regularFontPath)) {
-      fontFiles.push(regularFontPath);
+    // Collect font buffers
+    const fontBuffers: Uint8Array[] = [mainFontBuffer];
+    if (regularFontBuffer && regularFontBuffer !== mainFontBuffer) {
+      fontBuffers.push(regularFontBuffer);
     }
 
+    // Use resvg to render SVG to PNG with fonts
+    const scaleFactor = 2;
     const resvg = new Resvg(svg, {
       fitTo: {
         mode: "width",
         value: width * scaleFactor,
       },
       font: {
-        fontFiles,
+        fontBuffers,
         loadSystemFonts: false,
         defaultFontFamily: effectiveFontFamily,
       },
@@ -364,7 +391,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      base64: pngBuffer.toString("base64"),
+      base64: Buffer.from(pngBuffer).toString("base64"),
       width: width * scaleFactor,
       height: height * scaleFactor,
     });
