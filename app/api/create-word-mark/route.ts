@@ -128,6 +128,7 @@ async function loadFontBuffer(
 
   const fileName = getFontFileName(effectiveFamily, fontWeight);
   if (!fileName) {
+    console.error(`No font file found for ${effectiveFamily} ${fontWeight}`);
     return null;
   }
 
@@ -136,20 +137,23 @@ async function loadFontBuffer(
     const fontPath = path.join(process.cwd(), "public", "fonts", fileName);
     try {
       const buffer = fs.readFileSync(fontPath);
+      console.log(`Loaded font from filesystem: ${fontPath}, size: ${buffer.length}`);
       const uint8Array = new Uint8Array(buffer);
       fontBufferCache.set(cacheKey, uint8Array);
       return uint8Array;
-    } catch {
+    } catch (fsError) {
       // Filesystem failed, try fetching from public URL (Vercel)
+      console.log(`Filesystem read failed, fetching from URL: ${baseUrl}/fonts/${fileName}`);
       const fontUrl = `${baseUrl}/fonts/${fileName}`;
       const response = await fetch(fontUrl);
 
       if (!response.ok) {
-        console.error(`Failed to fetch font from ${fontUrl}: ${response.status}`);
+        console.error(`Failed to fetch font from ${fontUrl}: ${response.status} ${response.statusText}`);
         return null;
       }
 
       const arrayBuffer = await response.arrayBuffer();
+      console.log(`Loaded font from URL: ${fontUrl}, size: ${arrayBuffer.byteLength}`);
       const uint8Array = new Uint8Array(arrayBuffer);
       fontBufferCache.set(cacheKey, uint8Array);
       return uint8Array;
@@ -406,6 +410,9 @@ export async function POST(request: NextRequest) {
 
     // Use resvg to render SVG to PNG with fonts
     const scaleFactor = 2;
+    console.log(`Creating Resvg with ${fontBuffers.length} font buffer(s), sizes: ${fontBuffers.map(b => b.length).join(', ')}`);
+    console.log(`SVG: ${svg.substring(0, 200)}...`);
+
     const resvg = new Resvg(svg, {
       fitTo: {
         mode: "width",
@@ -413,13 +420,13 @@ export async function POST(request: NextRequest) {
       },
       font: {
         fontBuffers,
-        loadSystemFonts: false,
         defaultFontFamily: effectiveFontFamily,
       },
     });
 
     const pngData = resvg.render();
     const pngBuffer = pngData.asPng();
+    console.log(`Rendered PNG size: ${pngBuffer.length} bytes`);
 
     return NextResponse.json({
       success: true,

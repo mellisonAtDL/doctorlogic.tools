@@ -9,6 +9,12 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/lato": "^5.2.7",
+    "@fontsource/montserrat": "^5.2.8",
+    "@fontsource/open-sans": "^5.2.7",
+    "@fontsource/poppins": "^5.2.7",
+    "@fontsource/roboto": "^5.2.9",
     "@resvg/resvg-wasm": "^2.6.2",
     "chroma-js": "^2.4.2",
     "next": "^16.1.1",
