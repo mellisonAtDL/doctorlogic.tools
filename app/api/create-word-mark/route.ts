@@ -29,14 +29,13 @@ function getGoogleFontImport(
   fontStyle: string
 ): string {
   const encodedFont = fontName.replace(/ /g, "+");
-  const italicSuffix = fontStyle === "italic" ? "italic" : "";
-  const weightSpec = fontStyle === "italic" ? `ital,wght@1,${fontWeight}` : `wght@${fontWeight}`;
 
   // Also include regular weight for tagline
+  // Note: Use &amp; instead of & for XML/SVG compatibility
   if (fontStyle === "italic") {
-    return `@import url('https://fonts.googleapis.com/css2?family=${encodedFont}:ital,wght@0,400;1,${fontWeight}&display=swap');`;
+    return `@import url('https://fonts.googleapis.com/css2?family=${encodedFont}:ital,wght@0,400;1,${fontWeight}&amp;display=swap');`;
   }
-  return `@import url('https://fonts.googleapis.com/css2?family=${encodedFont}:wght@400;${fontWeight}&display=swap');`;
+  return `@import url('https://fonts.googleapis.com/css2?family=${encodedFont}:wght@400;${fontWeight}&amp;display=swap');`;
 }
 
 // Escape XML special characters
