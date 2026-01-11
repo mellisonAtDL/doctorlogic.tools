@@ -40,11 +40,8 @@ export default function FaviconGeneratorPage() {
   });
   const [variants, setVariants] = useState<FaviconVariant[]>([]);
   const [icoBase64, setIcoBase64] = useState<string | null>(null);
-  const [htmlSnippet, setHtmlSnippet] = useState<string>("");
-  const [webmanifestSnippet, setWebmanifestSnippet] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
 
   const handleFileSelect = useCallback(async (file: File) => {
     if (!file.type.startsWith("image/")) {
@@ -128,8 +125,6 @@ export default function FaviconGeneratorPage() {
 
       setVariants(data.variants);
       setIcoBase64(data.ico);
-      setHtmlSnippet(data.htmlSnippet);
-      setWebmanifestSnippet(data.webmanifestSnippet);
       setStep("download");
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
@@ -162,24 +157,12 @@ export default function FaviconGeneratorPage() {
     }
   };
 
-  const handleCopySnippet = async (snippet: string, type: string) => {
-    try {
-      await navigator.clipboard.writeText(snippet);
-      setCopiedSnippet(type);
-      setTimeout(() => setCopiedSnippet(null), 2000);
-    } catch {
-      setError("Failed to copy to clipboard");
-    }
-  };
-
   const handleReset = () => {
     setStep("upload");
     setUploadedImage(null);
     setUploadedFileName("");
     setVariants([]);
     setIcoBase64(null);
-    setHtmlSnippet("");
-    setWebmanifestSnippet("");
     setError(null);
     setConfig({
       backgroundColor: "transparent",
@@ -477,8 +460,8 @@ export default function FaviconGeneratorPage() {
                 {/* Light Background Preview */}
                 <div>
                   <p className="text-sm text-gray-500 mb-2">On light background</p>
-                  <div className="bg-white border border-gray-200 rounded-lg p-6 flex items-center justify-center gap-4">
-                    {[64, 32, 16].map((size) => (
+                  <div className="bg-white border border-gray-200 rounded-lg p-6 flex items-center justify-center gap-6">
+                    {[128, 64, 32].map((size) => (
                       <div
                         key={size}
                         className="flex flex-col items-center gap-2"
@@ -514,8 +497,8 @@ export default function FaviconGeneratorPage() {
                 {/* Dark Background Preview */}
                 <div>
                   <p className="text-sm text-gray-500 mb-2">On dark background</p>
-                  <div className="bg-slate-800 rounded-lg p-6 flex items-center justify-center gap-4">
-                    {[64, 32, 16].map((size) => (
+                  <div className="bg-slate-800 rounded-lg p-6 flex items-center justify-center gap-6">
+                    {[128, 64, 32].map((size) => (
                       <div
                         key={size}
                         className="flex flex-col items-center gap-2"
@@ -656,7 +639,7 @@ export default function FaviconGeneratorPage() {
                 {/* ICO File */}
                 {icoBase64 && (
                   <div className="border border-gray-200 rounded-lg p-4 text-center hover:border-blue-300 transition-colors">
-                    <div className="bg-gray-50 rounded-lg p-4 mb-3 flex items-center justify-center h-20">
+                    <div className="bg-gray-50 rounded-lg p-4 mb-3 flex items-center justify-center h-32">
                       <img
                         src={`data:image/png;base64,${variants.find((v) => v.size === 32)?.base64}`}
                         alt="favicon.ico"
@@ -685,14 +668,14 @@ export default function FaviconGeneratorPage() {
                     key={variant.name}
                     className="border border-gray-200 rounded-lg p-4 text-center hover:border-blue-300 transition-colors"
                   >
-                    <div className="bg-gray-50 rounded-lg p-4 mb-3 flex items-center justify-center h-20">
+                    <div className="bg-gray-50 rounded-lg p-4 mb-3 flex items-center justify-center h-32">
                       <img
                         src={`data:image/png;base64,${variant.base64}`}
                         alt={variant.name}
                         className="max-h-full max-w-full object-contain"
                         style={{
-                          maxWidth: Math.min(variant.size, 64),
-                          maxHeight: Math.min(variant.size, 64),
+                          maxWidth: Math.min(variant.size, 96),
+                          maxHeight: Math.min(variant.size, 96),
                         }}
                       />
                     </div>
@@ -710,55 +693,6 @@ export default function FaviconGeneratorPage() {
                     </button>
                   </div>
                 ))}
-              </div>
-            </div>
-
-            {/* Code Snippets */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* HTML Snippet */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-md font-medium text-gray-900">
-                    HTML Head Code
-                  </h3>
-                  <button
-                    onClick={() => handleCopySnippet(htmlSnippet, "html")}
-                    className={`text-sm font-medium px-3 py-1 rounded-lg transition-colors ${
-                      copiedSnippet === "html"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    {copiedSnippet === "html" ? "Copied!" : "Copy"}
-                  </button>
-                </div>
-                <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-sm overflow-x-auto">
-                  <code>{htmlSnippet}</code>
-                </pre>
-              </div>
-
-              {/* Webmanifest Snippet */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-md font-medium text-gray-900">
-                    site.webmanifest
-                  </h3>
-                  <button
-                    onClick={() =>
-                      handleCopySnippet(webmanifestSnippet, "webmanifest")
-                    }
-                    className={`text-sm font-medium px-3 py-1 rounded-lg transition-colors ${
-                      copiedSnippet === "webmanifest"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    {copiedSnippet === "webmanifest" ? "Copied!" : "Copy"}
-                  </button>
-                </div>
-                <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-sm overflow-x-auto">
-                  <code>{webmanifestSnippet}</code>
-                </pre>
               </div>
             </div>
 
