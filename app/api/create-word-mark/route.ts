@@ -1,7 +1,7 @@
 import { Resvg, initWasm } from "@resvg/resvg-wasm";
 import { NextRequest, NextResponse } from "next/server";
-import * as fs from "fs";
 import * as path from "path";
+import * as fs from "fs";
 
 interface WordMarkConfig {
   text: string;
@@ -68,7 +68,7 @@ async function ensureWasmInitialized(): Promise<void> {
   if (wasmInitialized) return;
 
   try {
-    // Load WASM from node_modules
+    // Try to load from node_modules first (works locally)
     const wasmPath = path.join(
       process.cwd(),
       "node_modules",
@@ -92,23 +92,11 @@ async function ensureWasmInitialized(): Promise<void> {
 // Cache for loaded font buffers
 const fontBufferCache = new Map<string, Uint8Array>();
 
-// Get the fonts directory path
-function getFontsDir(): string {
-  return path.join(process.cwd(), "public", "fonts");
-}
-
-// Load font as Uint8Array
-function loadFontBuffer(fontFamily: string, fontWeight: string): Uint8Array | null {
-  const cacheKey = `${fontFamily}-${fontWeight}`;
-
-  if (fontBufferCache.has(cacheKey)) {
-    return fontBufferCache.get(cacheKey)!;
-  }
-
+// Get font filename for a given family and weight
+function getFontFileName(fontFamily: string, fontWeight: string): string | null {
   const familyMap = fontFileMap[fontFamily];
   if (!familyMap) {
-    // Try Inter as fallback
-    return loadFontBuffer("Inter", fontWeight);
+    return null;
   }
 
   // Find the closest available weight
@@ -122,16 +110,50 @@ function loadFontBuffer(fontFamily: string, fontWeight: string): Uint8Array | nu
     fileName = familyMap[closestWeight.toString()];
   }
 
+  return fileName || null;
+}
+
+// Load font as Uint8Array - fetches from public URL on Vercel
+async function loadFontBuffer(
+  fontFamily: string,
+  fontWeight: string,
+  baseUrl: string
+): Promise<Uint8Array | null> {
+  const effectiveFamily = fontFileMap[fontFamily] ? fontFamily : "Inter";
+  const cacheKey = `${effectiveFamily}-${fontWeight}`;
+
+  if (fontBufferCache.has(cacheKey)) {
+    return fontBufferCache.get(cacheKey)!;
+  }
+
+  const fileName = getFontFileName(effectiveFamily, fontWeight);
   if (!fileName) {
     return null;
   }
 
   try {
-    const fontPath = path.join(getFontsDir(), fileName);
-    const buffer = fs.readFileSync(fontPath);
-    const uint8Array = new Uint8Array(buffer);
-    fontBufferCache.set(cacheKey, uint8Array);
-    return uint8Array;
+    // Try filesystem first (works locally)
+    const fontPath = path.join(process.cwd(), "public", "fonts", fileName);
+    try {
+      const buffer = fs.readFileSync(fontPath);
+      const uint8Array = new Uint8Array(buffer);
+      fontBufferCache.set(cacheKey, uint8Array);
+      return uint8Array;
+    } catch {
+      // Filesystem failed, try fetching from public URL (Vercel)
+      const fontUrl = `${baseUrl}/fonts/${fileName}`;
+      const response = await fetch(fontUrl);
+
+      if (!response.ok) {
+        console.error(`Failed to fetch font from ${fontUrl}: ${response.status}`);
+        return null;
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      fontBufferCache.set(cacheKey, uint8Array);
+      return uint8Array;
+    }
   } catch (error) {
     console.error(`Failed to load font ${fontFamily} ${fontWeight}:`, error);
     return null;
@@ -335,6 +357,13 @@ function createWordMarkSvg(config: WordMarkConfig): {
   return { svg, width, height };
 }
 
+// Get base URL from request
+function getBaseUrl(request: NextRequest): string {
+  const host = request.headers.get("host") || "localhost:3000";
+  const protocol = request.headers.get("x-forwarded-proto") || "https";
+  return `${protocol}://${host}`;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const config: WordMarkConfig = await request.json();
@@ -349,12 +378,15 @@ export async function POST(request: NextRequest) {
     // Initialize WASM
     await ensureWasmInitialized();
 
+    // Get base URL for fetching fonts
+    const baseUrl = getBaseUrl(request);
+
     // Get effective font family
     const effectiveFontFamily = getEffectiveFontFamily(config.fontFamily);
 
     // Load font buffers
-    const mainFontBuffer = loadFontBuffer(effectiveFontFamily, config.fontWeight);
-    const regularFontBuffer = loadFontBuffer(effectiveFontFamily, "400");
+    const mainFontBuffer = await loadFontBuffer(effectiveFontFamily, config.fontWeight, baseUrl);
+    const regularFontBuffer = await loadFontBuffer(effectiveFontFamily, "400", baseUrl);
 
     if (!mainFontBuffer) {
       return NextResponse.json(
