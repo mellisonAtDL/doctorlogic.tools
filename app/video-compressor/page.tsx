@@ -72,17 +72,15 @@ export default function VideoCompressorPage() {
     setProgressMessage("Loading video compression engine...");
 
     try {
-      // Dynamically import FFmpeg from CDN
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore - Dynamic CDN import
-      const { FFmpeg } = await import(
-        /* webpackIgnore: true */ "https://esm.sh/@ffmpeg/ffmpeg@0.12.10"
-      );
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore - Dynamic CDN import
-      const { fetchFile } = await import(
-        /* webpackIgnore: true */ "https://esm.sh/@ffmpeg/util@0.12.1"
-      );
+      // Dynamically import FFmpeg from CDN using variable URLs to bypass TypeScript module resolution
+      const ffmpegUrl = "https://esm.sh/@ffmpeg/ffmpeg@0.12.10";
+      const utilUrl = "https://esm.sh/@ffmpeg/util@0.12.1";
+
+      const ffmpegModule = await import(/* webpackIgnore: true */ ffmpegUrl);
+      const utilModule = await import(/* webpackIgnore: true */ utilUrl);
+
+      const FFmpeg = ffmpegModule.FFmpeg;
+      const fetchFile = utilModule.fetchFile;
 
       const ffmpeg = new FFmpeg();
 
