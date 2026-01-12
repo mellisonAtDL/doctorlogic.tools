@@ -80,13 +80,13 @@ export default function VideoCompressorPage() {
       );
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore - Dynamic CDN import
-      const { fetchFile, toBlobURL } = await import(
+      const { fetchFile } = await import(
         /* webpackIgnore: true */ "https://esm.sh/@ffmpeg/util@0.12.1"
       );
 
       const ffmpeg = new FFmpeg();
 
-      ffmpeg.on("progress", ({ progress, time }: { progress: number; time: number }) => {
+      ffmpeg.on("progress", ({ progress }: { progress: number }) => {
         setProgress(Math.round(progress * 100));
       });
 
@@ -94,11 +94,11 @@ export default function VideoCompressorPage() {
         console.log("[FFmpeg]", message);
       });
 
-      // Load FFmpeg WASM files from CDN
-      const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
+      // Load FFmpeg WASM files from jsdelivr CDN using UMD build (works on mobile)
+      const baseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd";
       await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
+        coreURL: `${baseURL}/ffmpeg-core.js`,
+        wasmURL: `${baseURL}/ffmpeg-core.wasm`,
       });
 
       ffmpegRef.current = ffmpeg;
@@ -107,7 +107,10 @@ export default function VideoCompressorPage() {
       setProgressMessage("");
     } catch (err) {
       console.error("Failed to load FFmpeg:", err);
-      setError("Failed to load video compression engine. Please refresh and try again.");
+      const message = err instanceof Error
+        ? err.message
+        : JSON.stringify(err) || "Unknown error";
+      setError(`Failed to load video compression engine: ${message}`);
     } finally {
       setFfmpegLoading(false);
     }
@@ -234,9 +237,9 @@ export default function VideoCompressorPage() {
 
       setProgressMessage("Finalizing...");
 
-      // Read output file
+      // Read output file - FileData needs to be cast to Uint8Array for Blob
       const data = await ffmpeg.readFile(outputFileName);
-      const blob = new Blob([data], {
+      const blob = new Blob([new Uint8Array(data as Uint8Array)], {
         type: config.format === "mp4" ? "video/mp4" : "video/webm",
       });
 
@@ -253,9 +256,10 @@ export default function VideoCompressorPage() {
       setStep("download");
     } catch (err) {
       console.error("Compression error:", err);
-      setError(
-        err instanceof Error ? err.message : "Compression failed. Please try again."
-      );
+      const message = err instanceof Error
+        ? err.message
+        : JSON.stringify(err) || "Unknown compression error";
+      setError(`Compression failed: ${message}`);
       setStep("configure");
     }
   };
@@ -276,7 +280,7 @@ export default function VideoCompressorPage() {
     // Video codec
     if (config.format === "mp4") {
       args.push("-c:v", "libx264");
-      args.push("-preset", "medium");
+      args.push("-preset", "fast"); // Use fast preset for better browser performance
     } else {
       args.push("-c:v", "libvpx-vp9");
     }
@@ -285,13 +289,12 @@ export default function VideoCompressorPage() {
     const crf = QUALITY_PRESETS[config.quality].crf;
     args.push("-crf", crf.toString());
 
-    // Resolution
+    // Resolution - scale to max width while preserving aspect ratio
     if (config.resolution !== "original" && videoInfo) {
       const targetHeight = RESOLUTION_OPTIONS[config.resolution].scale;
       if (targetHeight && videoInfo.height > targetHeight) {
-        // Scale to target height while maintaining aspect ratio
-        // -2 ensures width is divisible by 2 (required for most codecs)
-        args.push("-vf", `scale=-2:${targetHeight}`);
+        // Scale to target height, -2 ensures width is divisible by 2
+        args.push("-vf", `scale=-2:'min(${targetHeight},ih)'`);
       }
     }
 
