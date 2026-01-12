@@ -73,9 +73,13 @@ export default function VideoCompressorPage() {
 
     try {
       // Dynamically import FFmpeg from CDN
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore - Dynamic CDN import
       const { FFmpeg } = await import(
         /* webpackIgnore: true */ "https://esm.sh/@ffmpeg/ffmpeg@0.12.10"
       );
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore - Dynamic CDN import
       const { fetchFile, toBlobURL } = await import(
         /* webpackIgnore: true */ "https://esm.sh/@ffmpeg/util@0.12.1"
       );
