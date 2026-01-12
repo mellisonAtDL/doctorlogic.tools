@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { fetchFile } from "@ffmpeg/util";
 
 type Step = "upload" | "configure" | "processing" | "download";
 
@@ -57,7 +59,7 @@ export default function VideoCompressorPage() {
   const [ffmpegLoaded, setFfmpegLoaded] = useState(false);
   const [ffmpegLoading, setFfmpegLoading] = useState(false);
 
-  const ffmpegRef = useRef<any>(null);
+  const ffmpegRef = useRef<FFmpeg | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Load FFmpeg on mount
@@ -72,16 +74,6 @@ export default function VideoCompressorPage() {
     setProgressMessage("Loading video compression engine...");
 
     try {
-      // Dynamically import FFmpeg from CDN using variable URLs to bypass TypeScript module resolution
-      const ffmpegUrl = "https://esm.sh/@ffmpeg/ffmpeg@0.12.10";
-      const utilUrl = "https://esm.sh/@ffmpeg/util@0.12.1";
-
-      const ffmpegModule = await import(/* webpackIgnore: true */ ffmpegUrl);
-      const utilModule = await import(/* webpackIgnore: true */ utilUrl);
-
-      const FFmpeg = ffmpegModule.FFmpeg;
-      const fetchFile = utilModule.fetchFile;
-
       const ffmpeg = new FFmpeg();
 
       ffmpeg.on("progress", ({ progress }: { progress: number }) => {
@@ -100,7 +92,6 @@ export default function VideoCompressorPage() {
       });
 
       ffmpegRef.current = ffmpeg;
-      (window as any).fetchFile = fetchFile;
       setFfmpegLoaded(true);
       setProgressMessage("");
     } catch (err) {
@@ -213,7 +204,6 @@ export default function VideoCompressorPage() {
 
     try {
       const ffmpeg = ffmpegRef.current;
-      const fetchFile = (window as any).fetchFile;
 
       setProgressMessage("Reading video file...");
 
