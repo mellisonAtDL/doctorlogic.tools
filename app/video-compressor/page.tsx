@@ -73,9 +73,11 @@ export default function VideoCompressorPage() {
 
     try {
       // Dynamically import FFmpeg from CDN
+      // @ts-expect-error - CDN import not recognized by TypeScript
       const { FFmpeg } = await import(
         /* webpackIgnore: true */ "https://esm.sh/@ffmpeg/ffmpeg@0.12.10"
       );
+      // @ts-expect-error - CDN import not recognized by TypeScript
       const { fetchFile, toBlobURL } = await import(
         /* webpackIgnore: true */ "https://esm.sh/@ffmpeg/util@0.12.1"
       );
