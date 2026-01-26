@@ -11,6 +11,10 @@ export default function Home() {
           Internal tools for managing client assets and resources.
         </p>
 
+        {/* DoctorLogic Tools Section */}
+        <h2 className="text-2xl font-semibold text-gray-800 mb-6">
+          DoctorLogic Tools
+        </h2>
         <div className="grid gap-6 md:grid-cols-2">
           <Link
             href="/logo-optimizer"
@@ -131,6 +135,42 @@ export default function Home() {
               maintaining quality. No uploads to external servers.
             </p>
           </Link>
+        </div>
+
+        {/* Shared Tools Section */}
+        <h2 className="text-2xl font-semibold text-gray-800 mb-6 mt-12">
+          Shared Tools
+        </h2>
+        <p className="text-gray-600 mb-6">
+          Tools shared across Yapi and DoctorLogic teams.
+        </p>
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="block p-6 bg-gray-100 rounded-xl border border-dashed border-gray-300">
+            <div className="flex items-center gap-4 mb-3">
+              <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
+                <svg
+                  className="w-6 h-6 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                  />
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-400">
+                Coming Soon
+              </h3>
+            </div>
+            <p className="text-gray-400">
+              Shared tools for both Yapi and DoctorLogic teams will be added
+              here.
+            </p>
+          </div>
         </div>
       </div>
     </main>
