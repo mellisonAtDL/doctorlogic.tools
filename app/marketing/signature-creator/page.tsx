@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useState, useRef } from "react";
 
-// Placeholder logo URLs - replace with actual hosted logo URLs
-const YAPI_LOGO_URL = "/images/yapi-logo.png";
-const DOCTORLOGIC_LOGO_URL = "/images/doctorlogic-logo.png";
+// Combined Yapi & DoctorLogic logo
+const LOGO_URL = "/images/yapi-dl.png";
 
 export default function SignatureCreator() {
   const [name, setName] = useState("");
@@ -321,22 +320,12 @@ export default function SignatureCreator() {
                         paddingTop: "16px",
                       }}
                     >
-                      {/* Logo container */}
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: "12px" }}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={YAPI_LOGO_URL}
-                          alt="Yapi"
-                          style={{ height: "32px", width: "auto" }}
-                        />
-                        <span style={{ color: "#ddd", fontSize: "24px" }}>|</span>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={DOCTORLOGIC_LOGO_URL}
-                          alt="DoctorLogic"
-                          style={{ height: "32px", width: "auto" }}
-                        />
-                      </span>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={LOGO_URL}
+                        alt="Yapi & DoctorLogic"
+                        style={{ height: "32px", width: "auto" }}
+                      />
                     </p>
                     <p style={{ margin: "0", color: "#333" }}>
                       <strong>{name}</strong>
