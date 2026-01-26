@@ -57,7 +57,7 @@ export default function SignatureCreator() {
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <Link
-            href="/shared-tools/marketing"
+            href="/marketing"
             className="text-gray-500 hover:text-gray-700 transition-colors"
           >
             <svg
