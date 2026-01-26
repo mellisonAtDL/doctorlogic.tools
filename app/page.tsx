@@ -145,11 +145,14 @@ export default function Home() {
           Tools shared across Yapi and DoctorLogic teams.
         </p>
         <div className="grid gap-6 md:grid-cols-2">
-          <div className="block p-6 bg-gray-100 rounded-xl border border-dashed border-gray-300">
+          <Link
+            href="/shared-tools/design"
+            className="block p-6 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-indigo-300 transition-all"
+          >
             <div className="flex items-center gap-4 mb-3">
-              <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
+              <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center">
                 <svg
-                  className="w-6 h-6 text-gray-400"
+                  className="w-6 h-6 text-indigo-600"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -158,19 +161,44 @@ export default function Home() {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                    d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
                   />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-400">
-                Coming Soon
-              </h3>
+              <h2 className="text-xl font-semibold text-gray-900">Design</h2>
             </div>
-            <p className="text-gray-400">
-              Shared tools for both Yapi and DoctorLogic teams will be added
-              here.
+            <p className="text-gray-600">
+              Design tools for creating and managing visual assets across both
+              brands.
             </p>
-          </div>
+          </Link>
+
+          <Link
+            href="/shared-tools/marketing"
+            className="block p-6 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-orange-300 transition-all"
+          >
+            <div className="flex items-center gap-4 mb-3">
+              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                <svg
+                  className="w-6 h-6 text-orange-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"
+                  />
+                </svg>
+              </div>
+              <h2 className="text-xl font-semibold text-gray-900">Marketing</h2>
+            </div>
+            <p className="text-gray-600">
+              Marketing tools for campaigns, content, and brand management.
+            </p>
+          </Link>
         </div>
       </div>
     </main>
