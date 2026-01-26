@@ -46,11 +46,14 @@ export default function MarketingTools() {
         </p>
 
         <div className="grid gap-6 md:grid-cols-2">
-          <div className="block p-6 bg-gray-100 rounded-xl border border-dashed border-gray-300">
+          <Link
+            href="/shared-tools/marketing/signature-creator"
+            className="block p-6 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-orange-300 transition-all"
+          >
             <div className="flex items-center gap-4 mb-3">
-              <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
+              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
                 <svg
-                  className="w-6 h-6 text-gray-400"
+                  className="w-6 h-6 text-orange-600"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -59,18 +62,19 @@ export default function MarketingTools() {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                    d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
                   />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-400">
-                Coming Soon
-              </h3>
+              <h2 className="text-xl font-semibold text-gray-900">
+                Email Signature Creator
+              </h2>
             </div>
-            <p className="text-gray-400">
-              Marketing tools will be added here as they are developed.
+            <p className="text-gray-600">
+              Create standardized email signatures with Yapi and DoctorLogic
+              branding. Generate both general and reply signatures.
             </p>
-          </div>
+          </Link>
         </div>
       </div>
     </main>
