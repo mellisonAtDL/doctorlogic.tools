@@ -53,212 +53,386 @@ const architecture: Architecture = {
   workspace: {
     name: "DoctorLogic Platform",
     description:
-      "Architecture diagram for the DoctorLogic healthcare marketing platform",
+      "Multi-tenant healthcare marketing website platform - builds and hosts websites for medical practices to generate patient leads",
   },
   model: {
     people: [
       {
-        id: "patient",
-        name: "Patient",
-        description: "Healthcare practice patient looking for services",
+        id: "websiteViewer",
+        name: "Website Viewer",
+        description: "Potential patient browsing a client practice website",
         type: "person",
         tags: ["external"],
       },
       {
-        id: "practiceStaff",
-        name: "Practice Staff",
-        description: "Healthcare practice administrators and staff",
+        id: "client",
+        name: "Client",
+        description: "Practice staff/owner - pays for DL services, manages their site via admin",
         type: "person",
       },
       {
-        id: "dlAdmin",
-        name: "DL Admin",
-        description: "DoctorLogic internal administrators",
+        id: "dlEmployee",
+        name: "DL Employee",
+        description: "Internal team - builds sites, manages clients, has elevated admin access",
+        type: "person",
+      },
+      {
+        id: "designer",
+        name: "Designer",
+        description: "Design team - works in website code/templates, non-branching workflow",
         type: "person",
       },
     ],
     softwareSystems: [
+      // =========================================================================
+      // EDGE LAYER
+      // =========================================================================
       {
-        id: "webApp",
-        name: "Web App / Admin App",
-        description:
-          "Main web application and admin dashboard for practice management",
-        type: "softwareSystem",
-        technology: "Next.js, React",
-        tags: ["primary"],
-        children: [
-          {
-            id: "webAppFrontend",
-            name: "Frontend",
-            description: "React-based user interface",
-            type: "container",
-            technology: "Next.js, React, TypeScript",
-          },
-          {
-            id: "webAppApi",
-            name: "API Layer",
-            description: "Backend API services",
-            type: "container",
-            technology: "Next.js API Routes",
-          },
-        ],
-      },
-      {
-        id: "azureFunctions",
-        name: "Azure Functions",
-        description:
-          "Serverless compute for background processing and scheduled tasks",
-        type: "softwareSystem",
-        technology: "Azure Functions, C#/.NET",
-        tags: ["compute"],
-        children: [
-          {
-            id: "scheduledJobs",
-            name: "Scheduled Jobs",
-            description: "Cron-based background tasks",
-            type: "container",
-            technology: "Timer Triggers",
-          },
-          {
-            id: "eventProcessors",
-            name: "Event Processors",
-            description: "Queue and event-driven processors",
-            type: "container",
-            technology: "Queue Triggers",
-          },
-          {
-            id: "httpTriggers",
-            name: "HTTP Triggers",
-            description: "REST API endpoints",
-            type: "container",
-            technology: "HTTP Triggers",
-          },
-        ],
-      },
-      {
-        id: "cloudflareWorkers",
-        name: "Cloudflare Workers",
-        description: "Edge computing for low-latency operations and routing",
-        type: "softwareSystem",
-        technology: "Cloudflare Workers, JavaScript",
+        id: "cloudflare",
+        name: "Cloudflare Enterprise",
+        description: "Edge network - CDN, caching (cache-everything), WAF, DNS, custom domain handling",
+        type: "external",
+        technology: "Cloudflare Enterprise",
         tags: ["edge"],
         children: [
           {
-            id: "edgeRouting",
-            name: "Edge Routing",
-            description: "Request routing and load balancing at the edge",
+            id: "cloudflareCdn",
+            name: "CDN + Cache",
+            description: "Aggressive caching for all client websites",
             type: "container",
-            technology: "Workers",
+            technology: "Cache Everything",
           },
           {
-            id: "cacheLayer",
-            name: "Cache Layer",
-            description: "Edge caching for static and dynamic content",
+            id: "cloudflareWorkers",
+            name: "Workers",
+            description: "Various edge customizations for specific client needs",
             type: "container",
-            technology: "Workers KV",
+            technology: "Cloudflare Workers",
+          },
+        ],
+      },
+
+      // =========================================================================
+      // COMPUTE LAYER (Azure VMs)
+      // =========================================================================
+      {
+        id: "webServers",
+        name: "Web Servers",
+        description: "4 production Windows VMs running IIS - serves client websites and admin",
+        type: "softwareSystem",
+        technology: "Windows Server, IIS, ASP.NET",
+        tags: ["primary", "compute"],
+        children: [
+          {
+            id: "adminProject",
+            name: "Admin Project",
+            description: "admin.doctorlogic.com - Client + Internal admin (role-based)",
+            type: "container",
+            technology: "ASP.NET MVC, React",
+          },
+          {
+            id: "websitesProject",
+            name: "Websites Project",
+            description: "Serves client websites - multi-tenant with hostname→siteId mapping",
+            type: "container",
+            technology: "ASP.NET MVC",
+          },
+          {
+            id: "coreProject",
+            name: "Core Project",
+            description: "Shared library - data access, business logic, models",
+            type: "container",
+            technology: "C# Class Library",
           },
         ],
       },
       {
-        id: "sqlDatabase",
-        name: "SQL Database",
-        description: "Primary relational database for structured data",
-        type: "database",
-        technology: "Azure SQL",
+        id: "loadBalancer",
+        name: "Azure Load Balancer",
+        description: "Distributes traffic across the 4 production web servers",
+        type: "softwareSystem",
+        technology: "Azure Load Balancer",
+        tags: ["infrastructure"],
+      },
+      {
+        id: "assetServer",
+        name: "Asset Server",
+        description: "assets.doctorlogic.com - serves images and media uploaded by DL team",
+        type: "softwareSystem",
+        technology: "Windows Server, IIS",
         tags: ["storage"],
       },
       {
-        id: "blobStorage",
-        name: "Blob Storage",
-        description: "Object storage for images, documents, and media files",
+        id: "devServer",
+        name: "Dev/Test Server",
+        description: "Development and testing environment - 1 Windows VM",
+        type: "softwareSystem",
+        technology: "Windows Server, IIS",
+        tags: ["dev"],
+      },
+
+      // =========================================================================
+      // DATA LAYER
+      // =========================================================================
+      {
+        id: "sqlServer",
+        name: "SQL Server",
+        description: "Primary + backup VMs - single multi-tenant database (all clients, separated by siteId)",
         type: "database",
-        technology: "Azure Blob Storage",
+        technology: "SQL Server on VM",
         tags: ["storage"],
+        children: [
+          {
+            id: "sqlPrimary",
+            name: "Primary SQL",
+            description: "Main database server",
+            type: "database",
+            technology: "SQL Server",
+          },
+          {
+            id: "sqlBackup",
+            name: "Backup SQL",
+            description: "Backup/replica server",
+            type: "database",
+            technology: "SQL Server",
+          },
+          {
+            id: "databaseMail",
+            name: "Database Mail",
+            description: "Sends emails via SendGrid relay",
+            type: "component",
+            technology: "SQL Server Database Mail",
+          },
+        ],
+      },
+
+      // =========================================================================
+      // BACKGROUND PROCESSING
+      // =========================================================================
+      {
+        id: "azureFunctions",
+        name: "Azure Functions",
+        description: "Multiple function apps for various background processing jobs",
+        type: "softwareSystem",
+        technology: "Azure Functions",
+        tags: ["compute"],
       },
       {
-        id: "cdn",
-        name: "CDN",
-        description: "Content delivery network for static assets",
+        id: "ssis",
+        name: "SSIS Jobs",
+        description: "SQL Server Integration Services - ETL jobs, data fetching (BrightLocal, etc.)",
+        type: "softwareSystem",
+        technology: "SSIS",
+        tags: ["compute"],
+      },
+      {
+        id: "dapi",
+        name: "DAPI",
+        description: "Custom data job system built by data engineers - database + Azure Function hybrid",
+        type: "softwareSystem",
+        technology: "Custom (DB + Azure Function)",
+        tags: ["compute"],
+      },
+
+      // =========================================================================
+      // EXTERNAL SERVICES
+      // =========================================================================
+      {
+        id: "sendgrid",
+        name: "SendGrid",
+        description: "Email delivery service - lead notifications, system emails",
         type: "external",
-        technology: "Cloudflare CDN",
+        technology: "SendGrid API",
         tags: ["external"],
+      },
+      {
+        id: "googleAuth",
+        name: "Google Auth",
+        description: "Authentication for admin users",
+        type: "external",
+        technology: "Google OAuth",
+        tags: ["external"],
+      },
+      {
+        id: "googleAnalytics",
+        name: "Google Analytics",
+        description: "GA4 - client-configured, data pulled into admin via backend job",
+        type: "external",
+        technology: "GA4 API",
+        tags: ["external"],
+      },
+      {
+        id: "brightLocal",
+        name: "BrightLocal",
+        description: "Reviews and reputation management - data synced via SSIS",
+        type: "external",
+        technology: "BrightLocal API",
+        tags: ["external"],
+      },
+      {
+        id: "openai",
+        name: "OpenAI",
+        description: "AI features in admin (minor usage)",
+        type: "external",
+        technology: "OpenAI API",
+        tags: ["external"],
+      },
+      {
+        id: "ctm",
+        name: "CTM",
+        description: "CallTrackingMetrics - optional add-on for call tracking",
+        type: "external",
+        technology: "CTM",
+        tags: ["external", "optional"],
       },
     ],
     relationships: [
-      // Patient interactions
+      // =========================================================================
+      // WEBSITE VIEWER FLOW (Lead Generation)
+      // =========================================================================
       {
-        sourceId: "patient",
-        targetId: "cdn",
-        description: "Accesses website via",
+        sourceId: "websiteViewer",
+        targetId: "cloudflare",
+        description: "Visits client website",
+        technology: "HTTPS (custom domain)",
+      },
+      {
+        sourceId: "cloudflare",
+        targetId: "loadBalancer",
+        description: "Routes to origin",
         technology: "HTTPS",
       },
       {
-        sourceId: "cdn",
-        targetId: "cloudflareWorkers",
-        description: "Routes requests to",
-        technology: "HTTPS",
+        sourceId: "loadBalancer",
+        targetId: "webServers",
+        description: "Distributes traffic",
+        technology: "HTTP",
       },
       {
-        sourceId: "cloudflareWorkers",
-        targetId: "webApp",
-        description: "Proxies requests to",
-        technology: "HTTPS",
-      },
-
-      // Staff interactions
-      {
-        sourceId: "practiceStaff",
-        targetId: "webApp",
-        description: "Manages practice via",
-        technology: "HTTPS",
-      },
-      {
-        sourceId: "dlAdmin",
-        targetId: "webApp",
-        description: "Administers platform via",
-        technology: "HTTPS",
-      },
-
-      // Web App connections
-      {
-        sourceId: "webApp",
-        targetId: "sqlDatabase",
-        description: "Reads/writes data",
+        sourceId: "webServers",
+        targetId: "sqlServer",
+        description: "Loads site content, saves leads",
         technology: "SQL/TDS",
       },
       {
-        sourceId: "webApp",
-        targetId: "blobStorage",
-        description: "Stores/retrieves files",
-        technology: "Azure Blob API",
-      },
-      {
-        sourceId: "webApp",
-        targetId: "azureFunctions",
-        description: "Triggers background jobs",
-        technology: "HTTP/Queue",
+        sourceId: "webServers",
+        targetId: "assetServer",
+        description: "References images",
+        technology: "HTTPS",
       },
 
-      // Azure Functions connections
+      // =========================================================================
+      // CLIENT FLOW (Practice Admin)
+      // =========================================================================
+      {
+        sourceId: "client",
+        targetId: "cloudflare",
+        description: "Accesses admin.doctorlogic.com",
+        technology: "HTTPS",
+      },
+      {
+        sourceId: "client",
+        targetId: "googleAuth",
+        description: "Authenticates via",
+        technology: "OAuth",
+      },
+
+      // =========================================================================
+      // DL EMPLOYEE FLOW
+      // =========================================================================
+      {
+        sourceId: "dlEmployee",
+        targetId: "cloudflare",
+        description: "Accesses admin (internal features)",
+        technology: "HTTPS",
+      },
+      {
+        sourceId: "dlEmployee",
+        targetId: "assetServer",
+        description: "Uploads images/media",
+        technology: "HTTPS",
+      },
+      {
+        sourceId: "dlEmployee",
+        targetId: "googleAuth",
+        description: "Authenticates via",
+        technology: "OAuth",
+      },
+
+      // =========================================================================
+      // DESIGNER FLOW
+      // =========================================================================
+      {
+        sourceId: "designer",
+        targetId: "webServers",
+        description: "Edits site templates/code",
+        technology: "Git/Deploy",
+      },
+      {
+        sourceId: "designer",
+        targetId: "devServer",
+        description: "Tests changes",
+        technology: "HTTPS",
+      },
+
+      // =========================================================================
+      // EMAIL FLOW
+      // =========================================================================
+      {
+        sourceId: "sqlServer",
+        targetId: "sendgrid",
+        description: "Sends emails (lead notifications)",
+        technology: "SMTP via Database Mail",
+      },
+
+      // =========================================================================
+      // BACKGROUND PROCESSING
+      // =========================================================================
       {
         sourceId: "azureFunctions",
-        targetId: "sqlDatabase",
+        targetId: "sqlServer",
         description: "Processes data",
         technology: "SQL/TDS",
       },
       {
+        sourceId: "ssis",
+        targetId: "sqlServer",
+        description: "ETL data sync",
+        technology: "SQL/TDS",
+      },
+      {
+        sourceId: "ssis",
+        targetId: "brightLocal",
+        description: "Fetches review data",
+        technology: "API",
+      },
+      {
+        sourceId: "dapi",
+        targetId: "sqlServer",
+        description: "Custom data jobs",
+        technology: "SQL/TDS",
+      },
+      {
         sourceId: "azureFunctions",
-        targetId: "blobStorage",
-        description: "Processes files",
-        technology: "Azure Blob API",
+        targetId: "googleAnalytics",
+        description: "Pulls GA4 data",
+        technology: "Analytics API",
       },
 
-      // Cloudflare Workers connections
+      // =========================================================================
+      // EXTERNAL INTEGRATIONS
+      // =========================================================================
       {
-        sourceId: "cloudflareWorkers",
-        targetId: "azureFunctions",
-        description: "Calls edge functions",
-        technology: "HTTPS",
+        sourceId: "webServers",
+        targetId: "openai",
+        description: "AI features",
+        technology: "API",
+      },
+      {
+        sourceId: "webServers",
+        targetId: "ctm",
+        description: "Call tracking (optional)",
+        technology: "API",
       },
     ],
   },
@@ -540,47 +714,70 @@ export default function ArchitecturePage() {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
 
-  // Calculate positions for elements
+  // Calculate positions for elements - organized by layer
   const getPositions = useCallback(() => {
     const positions: Record<string, NodePosition> = {};
-    const nodeWidth = 180;
-    const nodeHeight = 120;
-    const spacing = 40;
+    const nodeWidth = 160;
+    const nodeHeight = 110;
+    const spacingX = 30;
+    const spacingY = 140;
+    const canvasWidth = 1400;
 
-    // People row (top)
+    // Helper to center a row
+    const centerRow = (count: number) =>
+      (canvasWidth - (count * nodeWidth + (count - 1) * spacingX)) / 2;
+
+    // ROW 0: People (y = 20)
     const people = architecture.model.people;
-    const peopleStartX = 400 - (people.length * (nodeWidth + spacing)) / 2;
+    const peopleStartX = centerRow(people.length);
     people.forEach((person, i) => {
       positions[person.id] = {
-        x: peopleStartX + i * (nodeWidth + spacing),
+        x: peopleStartX + i * (nodeWidth + spacingX),
         y: 20,
         width: nodeWidth,
         height: nodeHeight,
       };
     });
 
-    // Systems rows
-    const systems = architecture.model.softwareSystems;
-    const row1Systems = systems.slice(0, 3);
-    const row2Systems = systems.slice(3);
+    // ROW 1: Edge Layer - Cloudflare (y = 160)
+    positions["cloudflare"] = {
+      x: canvasWidth / 2 - nodeWidth / 2,
+      y: 20 + spacingY,
+      width: nodeWidth,
+      height: nodeHeight,
+    };
 
-    // Row 1 - main systems
-    const row1StartX = 400 - (row1Systems.length * (nodeWidth + spacing)) / 2;
-    row1Systems.forEach((system, i) => {
-      positions[system.id] = {
-        x: row1StartX + i * (nodeWidth + spacing),
-        y: 200,
+    // ROW 2: Compute Layer - Load Balancer, Web Servers, Asset Server, Dev (y = 300)
+    const computeLayer = ["loadBalancer", "webServers", "assetServer", "devServer"];
+    const computeStartX = centerRow(computeLayer.length);
+    computeLayer.forEach((id, i) => {
+      positions[id] = {
+        x: computeStartX + i * (nodeWidth + spacingX),
+        y: 20 + spacingY * 2,
         width: nodeWidth,
         height: nodeHeight,
       };
     });
 
-    // Row 2 - storage & external
-    const row2StartX = 400 - (row2Systems.length * (nodeWidth + spacing)) / 2;
-    row2Systems.forEach((system, i) => {
-      positions[system.id] = {
-        x: row2StartX + i * (nodeWidth + spacing),
-        y: 380,
+    // ROW 3: Data + Background Processing (y = 440)
+    const dataLayer = ["sqlServer", "azureFunctions", "ssis", "dapi"];
+    const dataStartX = centerRow(dataLayer.length);
+    dataLayer.forEach((id, i) => {
+      positions[id] = {
+        x: dataStartX + i * (nodeWidth + spacingX),
+        y: 20 + spacingY * 3,
+        width: nodeWidth,
+        height: nodeHeight,
+      };
+    });
+
+    // ROW 4: External Services (y = 580)
+    const externalLayer = ["sendgrid", "googleAuth", "googleAnalytics", "brightLocal", "openai", "ctm"];
+    const externalStartX = centerRow(externalLayer.length);
+    externalLayer.forEach((id, i) => {
+      positions[id] = {
+        x: externalStartX + i * (nodeWidth + spacingX),
+        y: 20 + spacingY * 4,
         width: nodeWidth,
         height: nodeHeight,
       };
@@ -828,14 +1025,14 @@ export default function ArchitecturePage() {
 
             {/* Diagram Canvas */}
             <div
-              className="relative h-[600px] overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100"
+              className="relative h-[700px] overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100"
               style={{ cursor: isPanning ? "grabbing" : "grab" }}
             >
               <svg
                 ref={svgRef}
                 width="100%"
                 height="100%"
-                viewBox="0 0 800 550"
+                viewBox="0 0 1400 750"
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
@@ -843,7 +1040,7 @@ export default function ArchitecturePage() {
               >
                 <g
                   transform={`translate(${pan.x}, ${pan.y}) scale(${scale})`}
-                  style={{ transformOrigin: "400px 275px" }}
+                  style={{ transformOrigin: "700px 375px" }}
                 >
                   {/* Grid pattern */}
                   <defs>
@@ -861,7 +1058,7 @@ export default function ArchitecturePage() {
                       />
                     </pattern>
                   </defs>
-                  <rect width="800" height="550" fill="url(#grid)" />
+                  <rect width="1400" height="750" fill="url(#grid)" />
 
                   {/* Relationships (draw first, behind nodes) */}
                   {architecture.model.relationships.map((rel, idx) => {
@@ -915,7 +1112,7 @@ export default function ArchitecturePage() {
                 <div className="text-xs font-semibold text-gray-700 mb-2">
                   Legend
                 </div>
-                <div className="flex flex-wrap gap-3 text-xs">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                   <div className="flex items-center gap-1.5">
                     <div className="w-3 h-3 rounded bg-blue-100 border border-blue-400"></div>
                     <span className="text-gray-600">Person</span>
@@ -1066,26 +1263,52 @@ export default function ArchitecturePage() {
                 Structurizr DSL
               </h3>
               <p className="text-gray-500 text-sm mb-3">
-                The architecture is defined using Structurizr DSL format. Click
-                Export to download the full DSL file.
+                Architecture defined in Structurizr DSL format. Click Export for
+                full file.
               </p>
-              <pre className="text-xs bg-gray-900 text-green-400 p-3 rounded-lg overflow-x-auto max-h-48 overflow-y-auto">
-                {`workspace "DoctorLogic" {
+              <pre className="text-xs bg-gray-900 text-green-400 p-3 rounded-lg overflow-x-auto max-h-64 overflow-y-auto">
+                {`workspace "DoctorLogic Platform" {
   model {
-    patient = person "Patient"
-    staff = person "Practice Staff"
+    # People
+    viewer = person "Website Viewer"
+    client = person "Client"
+    employee = person "DL Employee"
+    designer = person "Designer"
 
-    webApp = softwareSystem "Web App" {
-      frontend = container "Frontend"
-      api = container "API Layer"
+    # Edge
+    cloudflare = softwareSystem "Cloudflare" {
+      cdn = container "CDN + Cache"
+      workers = container "Workers"
     }
 
-    azureFunctions = softwareSystem "Azure Functions"
-    cloudflareWorkers = softwareSystem "CF Workers"
-    sqlDb = softwareSystem "SQL Database"
+    # Compute (Azure VMs)
+    webServers = softwareSystem "Web Servers" {
+      admin = container "Admin Project"
+      websites = container "Websites Project"
+      core = container "Core Project"
+    }
+    loadBalancer = softwareSystem "Azure LB"
+    assetServer = softwareSystem "Asset Server"
 
-    patient -> webApp "Uses"
-    webApp -> sqlDb "Reads/writes"
+    # Data
+    sqlServer = softwareSystem "SQL Server"
+
+    # Background
+    azureFunctions = softwareSystem "Azure Functions"
+    ssis = softwareSystem "SSIS Jobs"
+    dapi = softwareSystem "DAPI"
+
+    # External
+    sendgrid = softwareSystem "SendGrid"
+    googleAuth = softwareSystem "Google Auth"
+    brightLocal = softwareSystem "BrightLocal"
+
+    # Relationships
+    viewer -> cloudflare "Visits site"
+    cloudflare -> loadBalancer "Routes"
+    loadBalancer -> webServers "Distributes"
+    webServers -> sqlServer "Reads/writes"
+    sqlServer -> sendgrid "Sends email"
   }
 }`}
               </pre>
