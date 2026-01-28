@@ -67,6 +67,36 @@ export default function Home() {
               Design tools for creating and managing visual assets.
             </p>
           </Link>
+
+          <Link
+            href="/engineering"
+            className="block p-8 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-cyan-300 transition-all"
+          >
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-14 h-14 bg-cyan-100 rounded-lg flex items-center justify-center">
+                <svg
+                  className="w-7 h-7 text-cyan-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+                  />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-semibold text-gray-900">
+                Engineering
+              </h2>
+            </div>
+            <p className="text-gray-600">
+              Engineering tools for architecture docs, system design, and
+              technical resources.
+            </p>
+          </Link>
         </div>
       </div>
     </main>
