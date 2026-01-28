@@ -700,19 +700,107 @@ function Arrow({
 }
 
 // =============================================================================
+// VIEW TYPES
+// =============================================================================
+
+type ViewLevel = "context" | "container";
+
+interface ViewState {
+  level: ViewLevel;
+  focusedSystemId: string | null;
+  breadcrumbs: { id: string | null; name: string }[];
+}
+
+// =============================================================================
 // MAIN PAGE COMPONENT
 // =============================================================================
 
 export default function ArchitecturePage() {
   const [selectedElement, setSelectedElement] = useState<Element | null>(null);
-  const [viewLevel, setViewLevel] = useState<"context" | "container">(
-    "context"
-  );
+  const [viewState, setViewState] = useState<ViewState>({
+    level: "context",
+    focusedSystemId: null,
+    breadcrumbs: [{ id: null, name: "System Context" }],
+  });
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
+
+  // Get focused system if in container view
+  const focusedSystem = viewState.focusedSystemId
+    ? architecture.model.softwareSystems.find(
+        (s) => s.id === viewState.focusedSystemId
+      )
+    : null;
+
+  // Drill down into a system
+  const drillDown = (system: Element) => {
+    if (system.children && system.children.length > 0) {
+      setViewState({
+        level: "container",
+        focusedSystemId: system.id,
+        breadcrumbs: [
+          { id: null, name: "System Context" },
+          { id: system.id, name: system.name },
+        ],
+      });
+      setSelectedElement(null);
+      setPan({ x: 0, y: 0 });
+      setScale(1);
+    }
+  };
+
+  // Navigate back via breadcrumb
+  const navigateTo = (breadcrumbId: string | null) => {
+    if (breadcrumbId === null) {
+      setViewState({
+        level: "context",
+        focusedSystemId: null,
+        breadcrumbs: [{ id: null, name: "System Context" }],
+      });
+      setSelectedElement(null);
+      setPan({ x: 0, y: 0 });
+      setScale(1);
+    }
+  };
+
+  // Get elements to display based on view level
+  const getVisibleElements = useCallback((): Element[] => {
+    if (viewState.level === "context") {
+      // Show all people and software systems (high level)
+      return [
+        ...architecture.model.people,
+        ...architecture.model.softwareSystems,
+      ];
+    } else if (viewState.level === "container" && focusedSystem) {
+      // Show the focused system's children (containers)
+      // Plus any external systems that connect to this system
+      const containers = focusedSystem.children || [];
+
+      // Find related external systems
+      const relatedSystemIds = new Set<string>();
+      architecture.model.relationships.forEach((rel) => {
+        if (rel.sourceId === focusedSystem.id) {
+          relatedSystemIds.add(rel.targetId);
+        }
+        if (rel.targetId === focusedSystem.id) {
+          relatedSystemIds.add(rel.sourceId);
+        }
+      });
+
+      const relatedSystems = architecture.model.softwareSystems.filter(
+        (s) => relatedSystemIds.has(s.id) && s.id !== focusedSystem.id
+      );
+      const relatedPeople = architecture.model.people.filter((p) =>
+        relatedSystemIds.has(p.id)
+      );
+
+      return [...relatedPeople, ...containers, ...relatedSystems];
+    }
+    return [];
+  }, [viewState.level, focusedSystem]);
 
   // Calculate positions for elements - organized by layer
   const getPositions = useCallback(() => {
@@ -727,66 +815,139 @@ export default function ArchitecturePage() {
     const centerRow = (count: number) =>
       (canvasWidth - (count * nodeWidth + (count - 1) * spacingX)) / 2;
 
-    // ROW 0: People (y = 20)
-    const people = architecture.model.people;
-    const peopleStartX = centerRow(people.length);
-    people.forEach((person, i) => {
-      positions[person.id] = {
-        x: peopleStartX + i * (nodeWidth + spacingX),
-        y: 20,
+    if (viewState.level === "context") {
+      // CONTEXT VIEW - Show all systems organized by layer
+
+      // ROW 0: People (y = 20)
+      const people = architecture.model.people;
+      const peopleStartX = centerRow(people.length);
+      people.forEach((person, i) => {
+        positions[person.id] = {
+          x: peopleStartX + i * (nodeWidth + spacingX),
+          y: 20,
+          width: nodeWidth,
+          height: nodeHeight,
+        };
+      });
+
+      // ROW 1: Edge Layer - Cloudflare (y = 160)
+      positions["cloudflare"] = {
+        x: canvasWidth / 2 - nodeWidth / 2,
+        y: 20 + spacingY,
         width: nodeWidth,
         height: nodeHeight,
       };
-    });
 
-    // ROW 1: Edge Layer - Cloudflare (y = 160)
-    positions["cloudflare"] = {
-      x: canvasWidth / 2 - nodeWidth / 2,
-      y: 20 + spacingY,
-      width: nodeWidth,
-      height: nodeHeight,
-    };
+      // ROW 2: Compute Layer - Load Balancer, Web Servers, Asset Server, Dev (y = 300)
+      const computeLayer = [
+        "loadBalancer",
+        "webServers",
+        "assetServer",
+        "devServer",
+      ];
+      const computeStartX = centerRow(computeLayer.length);
+      computeLayer.forEach((id, i) => {
+        positions[id] = {
+          x: computeStartX + i * (nodeWidth + spacingX),
+          y: 20 + spacingY * 2,
+          width: nodeWidth,
+          height: nodeHeight,
+        };
+      });
 
-    // ROW 2: Compute Layer - Load Balancer, Web Servers, Asset Server, Dev (y = 300)
-    const computeLayer = ["loadBalancer", "webServers", "assetServer", "devServer"];
-    const computeStartX = centerRow(computeLayer.length);
-    computeLayer.forEach((id, i) => {
-      positions[id] = {
-        x: computeStartX + i * (nodeWidth + spacingX),
-        y: 20 + spacingY * 2,
-        width: nodeWidth,
-        height: nodeHeight,
-      };
-    });
+      // ROW 3: Data + Background Processing (y = 440)
+      const dataLayer = ["sqlServer", "azureFunctions", "ssis", "dapi"];
+      const dataStartX = centerRow(dataLayer.length);
+      dataLayer.forEach((id, i) => {
+        positions[id] = {
+          x: dataStartX + i * (nodeWidth + spacingX),
+          y: 20 + spacingY * 3,
+          width: nodeWidth,
+          height: nodeHeight,
+        };
+      });
 
-    // ROW 3: Data + Background Processing (y = 440)
-    const dataLayer = ["sqlServer", "azureFunctions", "ssis", "dapi"];
-    const dataStartX = centerRow(dataLayer.length);
-    dataLayer.forEach((id, i) => {
-      positions[id] = {
-        x: dataStartX + i * (nodeWidth + spacingX),
-        y: 20 + spacingY * 3,
-        width: nodeWidth,
-        height: nodeHeight,
-      };
-    });
+      // ROW 4: External Services (y = 580)
+      const externalLayer = [
+        "sendgrid",
+        "googleAuth",
+        "googleAnalytics",
+        "brightLocal",
+        "openai",
+        "ctm",
+      ];
+      const externalStartX = centerRow(externalLayer.length);
+      externalLayer.forEach((id, i) => {
+        positions[id] = {
+          x: externalStartX + i * (nodeWidth + spacingX),
+          y: 20 + spacingY * 4,
+          width: nodeWidth,
+          height: nodeHeight,
+        };
+      });
+    } else if (viewState.level === "container" && focusedSystem) {
+      // CONTAINER VIEW - Show focused system's internals
 
-    // ROW 4: External Services (y = 580)
-    const externalLayer = ["sendgrid", "googleAuth", "googleAnalytics", "brightLocal", "openai", "ctm"];
-    const externalStartX = centerRow(externalLayer.length);
-    externalLayer.forEach((id, i) => {
-      positions[id] = {
-        x: externalStartX + i * (nodeWidth + spacingX),
-        y: 20 + spacingY * 4,
-        width: nodeWidth,
-        height: nodeHeight,
-      };
-    });
+      const visibleElements = getVisibleElements();
+      const containers =
+        focusedSystem.children?.map((c) => c.id) || [];
+      const relatedPeople = visibleElements
+        .filter((e) => e.type === "person")
+        .map((e) => e.id);
+      const relatedSystems = visibleElements
+        .filter(
+          (e) =>
+            e.type !== "person" &&
+            !containers.includes(e.id) &&
+            e.id !== focusedSystem.id
+        )
+        .map((e) => e.id);
+
+      // ROW 0: Related people (y = 20)
+      if (relatedPeople.length > 0) {
+        const peopleStartX = centerRow(relatedPeople.length);
+        relatedPeople.forEach((id, i) => {
+          positions[id] = {
+            x: peopleStartX + i * (nodeWidth + spacingX),
+            y: 20,
+            width: nodeWidth,
+            height: nodeHeight,
+          };
+        });
+      }
+
+      // ROW 1: Containers (inside the focused system) (y = 180)
+      if (containers.length > 0) {
+        const containersStartX = centerRow(containers.length);
+        containers.forEach((id, i) => {
+          positions[id] = {
+            x: containersStartX + i * (nodeWidth + spacingX),
+            y: 180,
+            width: nodeWidth,
+            height: nodeHeight,
+          };
+        });
+      }
+
+      // ROW 2: Related external systems (y = 360)
+      if (relatedSystems.length > 0) {
+        const systemsStartX = centerRow(relatedSystems.length);
+        relatedSystems.forEach((id, i) => {
+          positions[id] = {
+            x: systemsStartX + i * (nodeWidth + spacingX),
+            y: 360,
+            width: nodeWidth,
+            height: nodeHeight,
+          };
+        });
+      }
+    }
 
     return positions;
-  }, []);
+  }, [viewState.level, focusedSystem, getVisibleElements]);
 
   const positions = getPositions();
+  const visibleElements = getVisibleElements();
 
   // Get relationships for selected element
   const getRelationshipsForElement = (elementId: string) => {
@@ -821,11 +982,17 @@ export default function ArchitecturePage() {
     setPan({ x: 0, y: 0 });
   };
 
-  // Get all elements
+  // Get all elements for relationship lookup
   const allElements = [
     ...architecture.model.people,
     ...architecture.model.softwareSystems,
+    ...architecture.model.softwareSystems.flatMap((s) => s.children || []),
   ];
+
+  // Check if element has children (can drill down)
+  const canDrillDown = (element: Element) => {
+    return element.children && element.children.length > 0;
+  };
 
   // Export DSL
   const exportDSL = () => {
@@ -938,67 +1105,106 @@ export default function ArchitecturePage() {
           <div className="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             {/* Toolbar */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleZoomOut}
-                  className="p-2 rounded-lg hover:bg-gray-200 transition-colors"
-                  title="Zoom out"
-                >
-                  <svg
-                    className="w-5 h-5 text-gray-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+              <div className="flex items-center gap-4">
+                {/* Breadcrumb Navigation */}
+                <div className="flex items-center gap-1 text-sm">
+                  {viewState.breadcrumbs.map((crumb, idx) => (
+                    <div key={idx} className="flex items-center">
+                      {idx > 0 && (
+                        <svg
+                          className="w-4 h-4 text-gray-400 mx-1"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 5l7 7-7 7"
+                          />
+                        </svg>
+                      )}
+                      <button
+                        onClick={() => navigateTo(crumb.id)}
+                        className={`px-2 py-1 rounded ${
+                          idx === viewState.breadcrumbs.length - 1
+                            ? "bg-cyan-100 text-cyan-800 font-medium"
+                            : "text-gray-600 hover:bg-gray-200"
+                        }`}
+                      >
+                        {crumb.name}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Divider */}
+                <div className="h-6 w-px bg-gray-300"></div>
+
+                {/* Zoom Controls */}
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={handleZoomOut}
+                    className="p-1.5 rounded hover:bg-gray-200 transition-colors"
+                    title="Zoom out"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7"
-                    />
-                  </svg>
-                </button>
-                <span className="text-sm text-gray-600 w-16 text-center">
-                  {Math.round(scale * 100)}%
-                </span>
-                <button
-                  onClick={handleZoomIn}
-                  className="p-2 rounded-lg hover:bg-gray-200 transition-colors"
-                  title="Zoom in"
-                >
-                  <svg
-                    className="w-5 h-5 text-gray-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                    <svg
+                      className="w-4 h-4 text-gray-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7"
+                      />
+                    </svg>
+                  </button>
+                  <span className="text-xs text-gray-500 w-12 text-center">
+                    {Math.round(scale * 100)}%
+                  </span>
+                  <button
+                    onClick={handleZoomIn}
+                    className="p-1.5 rounded hover:bg-gray-200 transition-colors"
+                    title="Zoom in"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"
-                    />
-                  </svg>
-                </button>
-                <button
-                  onClick={handleResetView}
-                  className="p-2 rounded-lg hover:bg-gray-200 transition-colors ml-2"
-                  title="Reset view"
-                >
-                  <svg
-                    className="w-5 h-5 text-gray-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                    <svg
+                      className="w-4 h-4 text-gray-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={handleResetView}
+                    className="p-1.5 rounded hover:bg-gray-200 transition-colors"
+                    title="Reset view"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
-                    />
-                  </svg>
-                </button>
+                    <svg
+                      className="w-4 h-4 text-gray-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+                      />
+                    </svg>
+                  </button>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -1084,24 +1290,87 @@ export default function ArchitecturePage() {
                     );
                   })}
 
+                  {/* Focused System Background (when in container view) */}
+                  {viewState.level === "container" && focusedSystem && (
+                    <g>
+                      <rect
+                        x={100}
+                        y={140}
+                        width={1200}
+                        height={200}
+                        rx={12}
+                        fill="#f0f9ff"
+                        stroke="#0ea5e9"
+                        strokeWidth={2}
+                        strokeDasharray="8 4"
+                      />
+                      <text
+                        x={120}
+                        y={165}
+                        fontSize={14}
+                        fontWeight="bold"
+                        fill="#0369a1"
+                      >
+                        {focusedSystem.name}
+                      </text>
+                      <text x={120} y={182} fontSize={11} fill="#0ea5e9">
+                        [{focusedSystem.technology}]
+                      </text>
+                    </g>
+                  )}
+
                   {/* Elements */}
-                  {allElements.map((element) => {
+                  {visibleElements.map((element) => {
                     const pos = positions[element.id];
                     if (!pos) return null;
 
+                    const hasDrillDown = canDrillDown(element);
+
                     return (
-                      <ElementCard
-                        key={element.id}
-                        element={element}
-                        position={pos}
-                        isSelected={selectedElement?.id === element.id}
-                        onClick={() =>
-                          setSelectedElement(
-                            selectedElement?.id === element.id ? null : element
-                          )
-                        }
-                        scale={scale}
-                      />
+                      <g key={element.id}>
+                        <ElementCard
+                          element={element}
+                          position={pos}
+                          isSelected={selectedElement?.id === element.id}
+                          onClick={() =>
+                            setSelectedElement(
+                              selectedElement?.id === element.id ? null : element
+                            )
+                          }
+                          scale={scale}
+                        />
+                        {/* Drill-down indicator */}
+                        {hasDrillDown && viewState.level === "context" && (
+                          <g
+                            transform={`translate(${pos.x + pos.width - 28}, ${pos.y + 4})`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              drillDown(element);
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <rect
+                              width={24}
+                              height={24}
+                              rx={4}
+                              fill="#0ea5e9"
+                              className="hover:fill-cyan-600"
+                            />
+                            <svg
+                              x={4}
+                              y={4}
+                              width={16}
+                              height={16}
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="white"
+                              strokeWidth={2}
+                            >
+                              <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                            </svg>
+                          </g>
+                        )}
+                      </g>
                     );
                   })}
                 </g>
@@ -1122,6 +1391,10 @@ export default function ArchitecturePage() {
                     <span className="text-gray-600">System</span>
                   </div>
                   <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded bg-cyan-100 border border-cyan-400"></div>
+                    <span className="text-gray-600">Container</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
                     <div className="w-3 h-3 rounded bg-amber-100 border border-amber-400"></div>
                     <span className="text-gray-600">Database</span>
                   </div>
@@ -1129,6 +1402,22 @@ export default function ArchitecturePage() {
                     <div className="w-3 h-3 rounded bg-gray-100 border border-gray-400"></div>
                     <span className="text-gray-600">External</span>
                   </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded bg-cyan-500"></div>
+                    <span className="text-gray-600">Drill Down</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* View Level Indicator */}
+              <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-sm border border-gray-200">
+                <div className="text-xs text-gray-500 uppercase tracking-wide">
+                  View Level
+                </div>
+                <div className="font-medium text-gray-900">
+                  {viewState.level === "context"
+                    ? "System Context (C1)"
+                    : "Container (C2)"}
                 </div>
               </div>
             </div>
@@ -1221,12 +1510,38 @@ export default function ArchitecturePage() {
                     </div>
                   </div>
 
+                  {/* Drill Down Button */}
+                  {selectedElement.children &&
+                    selectedElement.children.length > 0 &&
+                    viewState.level === "context" && (
+                      <button
+                        onClick={() => drillDown(selectedElement)}
+                        className="w-full py-2 px-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors flex items-center justify-center gap-2 text-sm font-medium"
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7"
+                          />
+                        </svg>
+                        Drill Down to Containers
+                      </button>
+                    )}
+
                   {/* Children (containers) */}
                   {selectedElement.children &&
                     selectedElement.children.length > 0 && (
                       <div>
                         <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">
-                          Containers
+                          Contains {selectedElement.children.length} Container
+                          {selectedElement.children.length > 1 ? "s" : ""}
                         </div>
                         <div className="space-y-2">
                           {selectedElement.children.map((child) => (
